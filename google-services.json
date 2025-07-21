@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "577762527657",
+    "project_id": "arayandco-ea566",
+    "storage_bucket": "arayandco-ea566.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:577762527657:android:dbb4ebca62bb1405171cb8",
+        "android_client_info": {
+          "package_name": "com.aray"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7K_EfF_jPwWh57IniUzIJJOrH-pysrMY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

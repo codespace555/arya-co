@@ -3,17 +3,24 @@ module.exports = function (api) {
   
   return {
     presets: [
-      ["babel-preset-expo", { jsxImportSource: "nativewind" }],
-      "nativewind/babel",
+      "babel-preset-expo", 
+      "nativewind/babel"
     ],
-
-    plugins: [["module-resolver", {
-      root: ["./"],
-
-      alias: {
-        "@": "./",
-        "tailwind.config": "./tailwind.config.js"
-      }
-    }]]
+    plugins: [
+      ['module:react-native-dotenv'],
+      [
+        "module-resolver",
+        {
+          root: ["./"],
+          alias: {
+            "@": "./",
+            // Note: This alias for tailwind.config is often not needed with modern tooling
+            "tailwind.config": "./tailwind.config.js"
+          }
+        }
+      ],
+      // This MUST be the last plugin
+      "react-native-reanimated/plugin",
+    ]
   };
 };

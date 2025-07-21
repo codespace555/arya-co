@@ -12,6 +12,7 @@ import UsersScreen from '../screens/UsersScreen';
 import AddProductScreen from '../screens/AddProductScreen';
 import UserOrdersScreen from '../screens/UserOrdersScreen';
 import AddOrderScreen from '../screens/AddOrderScreen';
+import Dashboard from '../screens/AddProductScreen';
 
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
@@ -20,6 +21,7 @@ const Stack = createNativeStackNavigator<DashboardStackParamList>();
 function DashboardStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: true }} >
+      <Stack.Screen name="Dashboard" component={Dashboard} />
       <Stack.Screen name="AddProduct" component={AddProductScreen} />
       <Stack.Screen name="UserOrders" component={UserOrdersScreen} />
       <Stack.Screen name="AddOrder" component={AddOrderScreen} />
