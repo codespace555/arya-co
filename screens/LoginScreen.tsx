@@ -91,7 +91,7 @@ export default function LoginScreen() {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View className="flex-1 items-center justify-center p-6">
             {/* Decorative Stickers with new icons and animations */}
-            <Animatable.Text
+            {/* <Animatable.Text
               animation="tada"
               easing="ease-in-out"
               iterationCount="infinite"
@@ -106,7 +106,7 @@ export default function LoginScreen() {
               delay={1800}
               style={styles.stickerBottomRight}>
               🎉
-            </Animatable.Text>
+            </Animatable.Text> */}
 
             {/* Logo Section with new icon and animations */}
             <Animatable.View animation="fadeInDown" duration={1200} className="mb-12 items-center">

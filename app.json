@@ -1,23 +1,23 @@
 {
   "expo": {
-    "name": "my-expo-app",
-    "slug": "my-expo-app",
+    "name": "Arya",
+    "slug": "arya",
     "version": "1.0.0",
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/aryaco.png"
     },
     "experiments": {
       "tsconfigPaths": true
     },
     "plugins": [
-      "@react-native-firebase/app"
+      
     ],
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/aryaco.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/aryaco.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -29,7 +29,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/aryaco.png",
         "backgroundColor": "#ffffff"
       }
     }

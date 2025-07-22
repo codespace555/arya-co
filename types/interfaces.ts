@@ -3,7 +3,7 @@
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'customer';
-
+export type OrderStatus = 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
 export interface Product {
   id?: string;
   name: string;
@@ -23,7 +23,7 @@ export interface Order {
   unit: string;
   price: number;
   totalPrice: number;
-  status: string;
+  status: OrderStatus
   userId: string;
   createdAt?: Timestamp;
   orderedAt?: Timestamp;

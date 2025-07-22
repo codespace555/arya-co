@@ -1,68 +1,76 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { View, ActivityIndicator } from 'react-native';
+
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import DrawerNavigator from './DrawerNavigator'; // Admin
 import CustomerDrawer from './CustomerDrawer'; // Customer
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
-import { RootStackParamList } from '../types/navigation';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { auth, db } from '../services/firebase'; // Correct path to your firebase config
+import { RootStackParamList } from '../types/navigation'; // Correct path to your types
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [role, setRole] = useState<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
 
-  const checkUserRegistration = async (uid: string) => {
-    try {
-      const docRef = doc(db, 'users', uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const userData = docSnap.data();
-        setRole(userData.role); // 'admin' or 'customer'
-        setIsRegistered(true);
-      } else {
-        setIsRegistered(false);
-      }
-    } catch (err) {
-      console.error('Failed to fetch user role', err);
-    }
-  };
-
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUser(user);
-        // This listener will react to changes in the user's document
-        const userDocRef = doc(db, 'users', user.uid);
-        const docUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
+    // This will hold the unsubscribe function for the Firestore listener
+    let firestoreUnsubscribe: () => void = () => {};
+
+    // Listen for changes to the user's authentication state
+    const authUnsubscribe = onAuthStateChanged(auth, (authUser) => {
+      // Unsubscribe from any previous Firestore listener
+      if (firestoreUnsubscribe) {
+        firestoreUnsubscribe();
+      }
+
+      setUser(authUser);
+
+      if (authUser) {
+        // If user is logged in, listen for changes to their user document
+        const userDocRef = doc(db, 'users', authUser.uid);
+        firestoreUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const userData = docSnap.data();
             setRole(userData.role);
             setIsRegistered(true);
           } else {
+            // User is authenticated but doesn't have a document in Firestore
+            setRole(null);
             setIsRegistered(false);
           }
+          // We have checked the user's status, so we can stop initializing
+          if (initializing) {
+            setInitializing(false);
+          }
         });
-        // We will need to unsubscribe from this listener when the component unmounts
-        return () => docUnsubscribe();
       } else {
-        setUser(null);
+        // User is logged out, clear all user-related state
         setRole(null);
         setIsRegistered(false);
+        if (initializing) {
+          setInitializing(false);
+        }
       }
     });
 
-    return () => unsubscribe();
-  }, []);
+    // Return a cleanup function to unsubscribe from all listeners on unmount
+    return () => {
+      authUnsubscribe();
+      if (firestoreUnsubscribe) {
+        firestoreUnsubscribe();
+      }
+    };
+  }, []); // The empty dependency array ensures this effect runs only once on mount
 
+  // Show a loading indicator while we check for user authentication
   if (initializing) {
-    // A simple loading indicator for a better UX during initialization
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#050816' }}>
         <ActivityIndicator size="large" color="#fff" />
@@ -70,12 +78,12 @@ export default function AppNavigator() {
     );
   }
 
+  // Render the correct navigator based on the user's state
   return (
     <Stack.Navigator
       screenOptions={{
-        // Applying the stylish dark theme from HomeScreen
         headerStyle: { backgroundColor: '#050816' },
-        headerTintColor: '#fff', // Sets the back button color to white
+        headerTintColor: '#fff',
         headerTitleStyle: {
           color: '#fff',
           fontWeight: 'bold',
@@ -85,28 +93,32 @@ export default function AppNavigator() {
       }}
     >
       {!user ? (
-        // Login and Register screens will have the styled header
+        // If no user is logged in, show the authentication screens
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} options={{ gestureEnabled: false }}/>
         </>
       ) : !isRegistered ? (
+        // If user is logged in but not registered in Firestore, show Register screen
         <Stack.Screen
           name="Register"
           component={RegisterScreen}
-          initialParams={{ uid: user?.uid }}
+          initialParams={{ uid: user.uid }}
+          options={{ gestureEnabled: false }}
         />
       ) : role === 'admin' ? (
+        // If user is an admin, show the admin drawer navigator
         <Stack.Screen
           name="Main"
           component={DrawerNavigator}
-          options={{ headerShown: false }} // Hide header to prevent double headers
+          options={{ headerShown: false }}
         />
       ) : (
+        // If user is a customer, show the customer drawer navigator
         <Stack.Screen
           name="Arya"
           component={CustomerDrawer}
-          options={{ headerShown: false }} // Hide header to prevent double headers
+          options={{ headerShown: false }}
         />
       )}
     </Stack.Navigator>

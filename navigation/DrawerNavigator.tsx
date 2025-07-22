@@ -6,14 +6,17 @@ import {
   DrawerParamList
 } from '../types/navigation'; // adjust import path
 
+// Import your screen components
 import ProductList from '../screens/ProductList';
 import OrdersScreen from '../screens/OrdersScreen';
 import UsersScreen from '../screens/UsersScreen';
 import AddProductScreen from '../screens/AddProductScreen';
 import UserOrdersScreen from '../screens/UserOrdersScreen';
 import AddOrderScreen from '../screens/AddOrderScreen';
-import Dashboard from '../screens/AddProductScreen';
 
+// --- FIX: Import the correct Dashboard component ---
+// Make sure this path points to your actual Dashboard screen file
+import Dashboard from '../screens/Dashboard'; 
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
 const Stack = createNativeStackNavigator<DashboardStackParamList>();
@@ -21,7 +24,8 @@ const Stack = createNativeStackNavigator<DashboardStackParamList>();
 function DashboardStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: true }} >
-      <Stack.Screen name="Dashboard" component={Dashboard} />
+      {/* This will now render the correct Dashboard component */}
+      <Stack.Screen name="Dashboard" component={Dashboard} /> 
       <Stack.Screen name="AddProduct" component={AddProductScreen} />
       <Stack.Screen name="UserOrders" component={UserOrdersScreen} />
       <Stack.Screen name="AddOrder" component={AddOrderScreen} />
@@ -49,6 +53,5 @@ export default function DrawerNavigator() {
       <Drawer.Screen name="Orderslist" component={OrdersScreen} />
       <Drawer.Screen name="Users" component={UsersScreen} />
     </Drawer.Navigator>
-    
   );
 }
