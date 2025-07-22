@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Animated, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { DashboardStackParamList } from '../types/navigation';
-import { OrderStatus, User } from '../types/interfaces'; // Ensure User is also imported
+import {  OrderStatus, User } from '../types/interfaces'; // Ensure User is also imported
+import Icon from 'react-native-vector-icons/Ionicons';
+
+type DashboardScreenProp = NativeStackNavigationProp<DashboardStackParamList>;
 interface Order {
   id: string;
   userId: string;
@@ -17,143 +20,138 @@ interface Order {
   orderedAt: { toDate: () => Date };
   deliveryDate: { toDate: () => Date };
 }
-type DashboardScreenProp = NativeStackNavigationProp<DashboardStackParamList>;
+// --- Color and Style mapping for Order Status ---
+const statusConfig: { [key in OrderStatus]: { color: string; icon: string } } = {
+    pending: { color: '#F59E0B', icon: 'hourglass-outline' },
+    processing: { color: '#3B82F6', icon: 'sync-circle-outline' },
+    shipped: { color: '#8B5CF6', icon: 'airplane-outline' },
+    delivered: { color: '#10B981', icon: 'checkmark-circle-outline' },
+    cancelled: { color: '#EF4444', icon: 'close-circle-outline' },
+};
+
+// --- Animated Order Card Component ---
+const OrderCard = ({ order, user, index }: { order: Order, user: User | undefined, index: number }) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 500,
+            delay: index * 100,
+            useNativeDriver: true,
+        }).start();
+    }, [fadeAnim, index]);
+
+    return (
+        <Animated.View style={{ opacity: fadeAnim }}>
+            <View style={styles.orderCard}>
+                <View>
+                    <Text style={styles.orderProduct}>{order.productName}</Text>
+                    <Text style={styles.orderUser}>For: {user?.name || 'Unknown User'}</Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: statusConfig[order.status]?.color || '#6B7280' }]}>
+                  <Icon name={statusConfig[order.status]?.icon || 'help-circle-outline'} size={12} color="#fff" />
+                  <Text style={styles.orderStatus}>{order.status}</Text>
+                </View>
+            </View>
+        </Animated.View>
+    );
+};
+
 
 export default function Dashboard() {
   const navigation = useNavigation<DashboardScreenProp>();
-
+  const [loading, setLoading] = useState(true);
   const [totalProducts, setTotalProducts] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
   const [totalOrders, setTotalOrders] = useState(0);
   const [totalEarnings, setTotalEarnings] = useState(0);
-
-  // New state for today's orders
   const [todaysDeliveries, setTodaysDeliveries] = useState<Order[]>([]);
   const [todaysOrders, setTodaysOrders] = useState<Order[]>([]);
   const [userMap, setUserMap] = useState<Map<string, User>>(new Map());
 
   useEffect(() => {
-    // Listener for total products
-    const productUnsub = onSnapshot(collection(db, 'products'), (snapshot) => {
-      setTotalProducts(snapshot.size);
-    });
-
-    // Listener for total users and create a map
+    const productUnsub = onSnapshot(collection(db, 'products'), (snapshot) => setTotalProducts(snapshot.size));
     const userUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
       setTotalUsers(snapshot.size);
       const users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as User[];
-
-      // ✅ DEFINITIVE FIX: Use .reduce() for a type-safe way to build the map.
-      // This is clearer to TypeScript and guarantees the key is a string.
       const newMap = users.reduce((map, user) => {
-        if (user.id) {
-          // Ensure the user has an ID
-          map.set(user.id, user);
-        }
+        if (user.id) map.set(user.id, user);
         return map;
       }, new Map<string, User>());
-
       setUserMap(newMap);
     });
 
-    // Listener for orders to calculate all stats
-    const orderUnsub = onSnapshot(collection(db, 'orders'), (snapshot) => {
+    const ordersQuery = query(collection(db, 'orders'), orderBy('orderedAt', 'desc'));
+    const orderUnsub = onSnapshot(ordersQuery, (snapshot) => {
       const fetchedOrders = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Order[];
       const earnings = fetchedOrders.reduce((sum, order) => sum + order.totalPrice, 0);
-
       setTotalOrders(snapshot.size);
       setTotalEarnings(earnings);
 
-      // Filter for today's orders
       const today = new Date().toDateString();
-      const deliveries = fetchedOrders.filter(
-        (order) => order.deliveryDate.toDate().toDateString() === today
-      );
-      const newOrders = fetchedOrders.filter(
-        (order) => order.orderedAt.toDate().toDateString() === today
-      );
-
+      const deliveries = fetchedOrders.filter((order) => order.deliveryDate.toDate().toDateString() === today);
+      const newOrders = fetchedOrders.filter((order) => order.orderedAt.toDate().toDateString() === today);
       setTodaysDeliveries(deliveries);
       setTodaysOrders(newOrders);
+      setLoading(false);
     });
 
-    // Cleanup listeners on component unmount
-    return () => {
-      productUnsub();
-      userUnsub();
-      orderUnsub();
-    };
+    return () => { productUnsub(); userUnsub(); orderUnsub(); };
   }, []);
 
-  const renderOrderListItem = (order: Order) => (
-    <View key={order.id} style={styles.orderCard}>
-      <View>
-        <Text style={styles.orderProduct}>{order.productName}</Text>
-        <Text style={styles.orderUser}>
-          For: {userMap.get(order.userId)?.name || 'Unknown User'}
-        </Text>
-      </View>
-      <Text style={styles.orderStatus}>{order.status}</Text>
-    </View>
-  );
+  if (loading) {
+    return <View style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></View>;
+  }
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Admin Dashboard</Text>
-
       {/* 2x2 Grid for Statistics */}
       <View style={styles.grid}>
-        {/* Total Products Stat Box */}
-        <View style={[styles.statBox, { backgroundColor: '#3b82f6', shadowColor: '#1d4ed8' }]}>
-          <Text style={styles.statBoxIcon}>📦</Text>
-          <Text style={styles.statBoxTitle}>Total Products</Text>
+        <View style={[styles.statBox, { backgroundColor: '#4F46E5' }]}>
+          <Icon name="cube-outline" size={32} color="#fff" />
           <Text style={styles.statBoxValue}>{totalProducts}</Text>
+          <Text style={styles.statBoxTitle}>Total Products</Text>
         </View>
-
-        {/* Total Users Stat Box */}
-        <View style={[styles.statBox, { backgroundColor: '#10b981', shadowColor: '#047857' }]}>
-          <Text style={styles.statBoxIcon}>👥</Text>
-          <Text style={styles.statBoxTitle}>Total Users</Text>
+        <View style={[styles.statBox, { backgroundColor: '#10B981' }]}>
+          <Icon name="people-outline" size={32} color="#fff" />
           <Text style={styles.statBoxValue}>{totalUsers}</Text>
+          <Text style={styles.statBoxTitle}>Total Users</Text>
         </View>
-
-        {/* Total Orders Stat Box */}
-        <View style={[styles.statBox, { backgroundColor: '#f97316', shadowColor: '#c2410c' }]}>
-          <Text style={styles.statBoxIcon}>📈</Text>
-          <Text style={styles.statBoxTitle}>Total Orders</Text>
+        <View style={[styles.statBox, { backgroundColor: '#F59E0B' }]}>
+          <Icon name="cart-outline" size={32} color="#fff" />
           <Text style={styles.statBoxValue}>{totalOrders}</Text>
+          <Text style={styles.statBoxTitle}>Total Orders</Text>
         </View>
-
-        {/* Total Earnings Stat Box */}
-        <View style={[styles.statBox, { backgroundColor: '#ef4444', shadowColor: '#b91c1c' }]}>
-          <Text style={styles.statBoxIcon}>💰</Text>
-          <Text style={styles.statBoxTitle}>Total Earnings</Text>
+        <View style={[styles.statBox, { backgroundColor: '#EF4444' }]}>
+          <Icon name="cash-outline" size={32} color="#fff" />
           <Text style={styles.statBoxValue}>₹{totalEarnings.toFixed(2)}</Text>
+          <Text style={styles.statBoxTitle}>Total Earnings</Text>
         </View>
       </View>
 
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>
-        <Pressable
-          style={[styles.actionButton, { backgroundColor: '#2563eb' }]}
-          onPress={() => navigation.navigate('AddProduct')}>
-          <Text style={styles.actionButtonText}>+ Add Product</Text>
+        <Pressable style={styles.actionButton} onPress={() => navigation.navigate('AddProduct')}>
+          <Icon name="add-circle-outline" size={20} color="#fff" />
+          <Text style={styles.actionButtonText}>Add Product</Text>
         </Pressable>
-        <Pressable
-          style={[styles.actionButton, { backgroundColor: '#16a34a' }]}
-          onPress={() => navigation.navigate('AddOrder')}>
-          <Text style={styles.actionButtonText}>🛒 Add Order</Text>
+        <Pressable style={styles.actionButton} onPress={() => navigation.navigate('AddOrder')}>
+          <Icon name="add-outline" size={20} color="#fff" />
+          <Text style={styles.actionButtonText}>Add Order</Text>
         </Pressable>
       </View>
 
       {/* Today's Deliveries Section */}
       <View style={styles.sectionContainer}>
-        <View className="flex-1 flex-row justify-between">
-          <Text style={styles.sectionHeader}>Today's Deliveries</Text>
-          <Text style={styles.sectionHeader}>{todaysDeliveries.length} </Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's Deliveries</Text>
+          <Text style={styles.sectionCount}>{todaysDeliveries.length}</Text>
         </View>
         {todaysDeliveries.length > 0 ? (
-          todaysDeliveries.map(renderOrderListItem)
+          todaysDeliveries.map((order, index) => (
+            <OrderCard key={order.id} order={order} user={userMap.get(order.userId)} index={index} />
+          ))
         ) : (
           <Text style={styles.emptyListText}>No deliveries scheduled for today.</Text>
         )}
@@ -161,12 +159,14 @@ export default function Dashboard() {
 
       {/* Today's New Orders Section */}
       <View style={styles.sectionContainer}>
-        <View className="flex-1 flex-row justify-between">
-          <Text style={styles.sectionHeader}>Today's New Orders</Text>
-          <Text style={styles.sectionHeader}>{todaysOrders.length}</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's New Orders</Text>
+          <Text style={styles.sectionCount}>{todaysOrders.length}</Text>
         </View>
         {todaysOrders.length > 0 ? (
-          todaysOrders.map(renderOrderListItem)
+          todaysOrders.map((order, index) => (
+            <OrderCard key={order.id} order={order} user={userMap.get(order.userId)} index={index} />
+          ))
         ) : (
           <Text style={styles.emptyListText}>No new orders placed today.</Text>
         )}
@@ -176,114 +176,125 @@ export default function Dashboard() {
 }
 
 const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0D1117',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#0D1117',
     paddingHorizontal: 16,
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    textAlign: 'center',
-    marginVertical: 24,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginTop: 24,
   },
   statBox: {
     width: '48%',
     padding: 20,
-    borderRadius: 16,
+    borderRadius: 12,
     marginBottom: 16,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statBoxIcon: {
-    fontSize: 32,
-  },
-  statBoxTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 12,
   },
   statBoxValue: {
     color: '#fff',
     fontSize: 24,
     fontWeight: 'bold',
-    marginTop: 6,
+    marginTop: 8,
+  },
+  statBoxTitle: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    marginTop: 4,
   },
   buttonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 16,
-    marginBottom: 32, // Increased margin
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 32,
   },
   actionButton: {
+    backgroundColor: '#1C2128',
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    elevation: 3,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#30363D',
+    width: '48%',
+    justifyContent: 'center',
   },
   actionButtonText: {
-    color: '#fff',
+    color: '#c9d1d9',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    marginLeft: 8,
   },
   sectionContainer: {
     marginBottom: 24,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#334155',
-    marginBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: '#cbd5e1',
-    paddingBottom: 4,
+    color: '#c9d1d9',
+  },
+  sectionCount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    backgroundColor: '#30363D',
+    paddingHorizontal: 10,
+    borderRadius: 8,
   },
   orderCard: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    backgroundColor: '#1C2128',
+    borderRadius: 10,
     padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#30363D',
   },
   orderProduct: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1e293b',
+    color: '#c9d1d9',
   },
   orderUser: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#8b949e',
     marginTop: 2,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
   },
   orderStatus: {
     fontSize: 12,
     fontWeight: 'bold',
     color: '#fff',
-    backgroundColor: '#64748b',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
     textTransform: 'capitalize',
+    marginLeft: 4,
   },
   emptyListText: {
     textAlign: 'center',
-    color: '#64748b',
+    color: '#8b949e',
     marginTop: 16,
     fontStyle: 'italic',
   },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { collection, addDoc, Timestamp, setDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
@@ -17,6 +19,7 @@ import { DashboardStackParamList } from "../types/navigation";
 import * as ImagePicker from "expo-image-picker";
 import { uploadToCloudinary } from "../services/cloudinary";
 import Toast from "react-native-toast-message";
+import Icon from "react-native-vector-icons/Ionicons";
 
 type AddProductRouteProp = RouteProp<DashboardStackParamList, "AddProduct">;
 
@@ -99,8 +102,6 @@ export default function AddProductScreen() {
           type: "success",
           text1: "Product updated successfully",
         });
-
-        
       } else {
         await addDoc(collection(db, "products"), {
           ...productData,
@@ -108,18 +109,9 @@ export default function AddProductScreen() {
         });
         Toast.show({
           type: "success",
-          text1: "Product updated successfully",
+          text1: "Product added successfully",
         });
-        // Alert.alert("Success", "Product added successfully!");
       }
-
-      setName("");
-      setPrice("");
-      setDesc("");
-      setQuantity("");
-      setUnit("pcs");
-      setImageUrl(null);
-      setPublicId(null);
       navigation.goBack();
     } catch (error) {
       console.error("Error saving product:", error);
@@ -132,116 +124,204 @@ export default function AddProductScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      className="flex-1 bg-white"
+      style={styles.container}
     >
-      <ScrollView className="px-6 py-8">
-        <Text className="text-2xl font-bold text-blue-700 text-center mb-6">
-          {existingProduct ? "Edit Product" : "Add New Product"}
+      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+        <Text style={styles.header}>
+          {existingProduct?.id ? "Edit Product" : "Add New Product"}
         </Text>
 
-        {/* Upload Image */}
+        {/* Image Picker */}
         <TouchableOpacity
-          className="bg-gray-200 rounded-xl mb-4 p-4 items-center justify-center"
+          style={styles.imagePicker}
           onPress={pickImage}
           disabled={uploading}
         >
-          <Text className="text-blue-700 font-medium">
-            {uploading ? "Uploading..." : "Pick Product Image"}
-          </Text>
+          {uploading ? (
+            <ActivityIndicator size="small" color="#A5B4FC" />
+          ) : (
+            <>
+              <Icon name="cloud-upload-outline" size={24} color="#A5B4FC" />
+              <Text style={styles.imagePickerText}>Upload Product Image</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         {imageUrl && (
-          <Image
-            source={{ uri: imageUrl }}
-            style={{ width: "100%", height: 200, borderRadius: 12 }}
-            className="mb-4"
-          />
+          <Image source={{ uri: imageUrl }} style={styles.imagePreview} />
         )}
 
-        {/* Inputs... */}
-        {/* Product Name */}
+        {/* Form Inputs */}
+        <Text style={styles.label}>Product Name</Text>
         <TextInput
-          placeholder="Product Name"
+          placeholder="e.g., Fresh Apples"
           value={name}
           onChangeText={setName}
-          className="border border-gray-300 rounded-lg px-4 py-2 mb-3"
+          style={styles.input}
+          placeholderTextColor="#8b949e"
         />
 
-        {/* Price */}
+        <Text style={styles.label}>Price</Text>
         <TextInput
-          placeholder="Price"
+          placeholder="e.g., 100"
           value={price}
           onChangeText={setPrice}
           keyboardType="numeric"
-          className="border border-gray-300 rounded-lg px-4 py-2 mb-3"
+          style={styles.input}
+          placeholderTextColor="#8b949e"
         />
 
-        {/* Description */}
+        <Text style={styles.label}>Description</Text>
         <TextInput
-          placeholder="Description"
+          placeholder="e.g., Sweet and juicy apples from the Himalayas"
           value={desc}
           onChangeText={setDesc}
           multiline
-          className="border border-gray-300 rounded-lg px-4 py-2 mb-3"
+          style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+          placeholderTextColor="#8b949e"
         />
 
-        {/* Quantity */}
+        <Text style={styles.label}>Quantity</Text>
         <TextInput
-          placeholder="Quantity"
+          placeholder="e.g., 50"
           value={quantity}
           onChangeText={setQuantity}
           keyboardType="numeric"
-          className="border border-gray-300 rounded-lg px-4 py-2 mb-3"
+          style={styles.input}
+          placeholderTextColor="#8b949e"
         />
 
-        {/* Unit */}
-        <View className="flex-row mb-6 gap-4">
+        <Text style={styles.label}>Unit</Text>
+        <View style={styles.unitContainer}>
           <TouchableOpacity
             onPress={() => setUnit("pcs")}
-            className={`px-4 py-2 rounded-full border ${
-              unit === "pcs" ? "bg-blue-600" : "bg-gray-200"
-            }`}
+            style={[styles.unitButton, unit === "pcs" && styles.unitButtonSelected]}
           >
-            <Text
-              className={`text-sm ${
-                unit === "pcs" ? "text-white" : "text-gray-800"
-              }`}
-            >
-              Pcs
+            <Text style={[styles.unitButtonText, unit === "pcs" && styles.unitButtonTextSelected]}>
+              Pieces (pcs)
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             onPress={() => setUnit("kg")}
-            className={`px-4 py-2 rounded-full border ${
-              unit === "kg" ? "bg-blue-600" : "bg-gray-200"
-            }`}
+            style={[styles.unitButton, unit === "kg" && styles.unitButtonSelected]}
           >
-            <Text
-              className={`text-sm ${
-                unit === "kg" ? "text-white" : "text-gray-800"
-              }`}
-            >
-              Kg
+            <Text style={[styles.unitButtonText, unit === "kg" && styles.unitButtonTextSelected]}>
+              Kilograms (kg)
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Submit Button */}
         <TouchableOpacity
-          className={`bg-blue-600 p-4 rounded-xl ${loading ? "opacity-50" : ""}`}
+          style={[styles.submitButton, (loading || uploading) && styles.disabledButton]}
           onPress={handleSubmit}
-          disabled={loading}
+          disabled={loading || uploading}
         >
-          <Text className="text-white text-center text-lg font-semibold">
-            {loading
-              ? "Saving..."
-              : existingProduct
-                ? "Update Product"
-                : "Add Product"}
-          </Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.submitButtonText}>
+              {existingProduct?.id ? "Update Product" : "Save Product"}
+            </Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#0D1117', // Black background
+    },
+    scrollViewContent: {
+        padding: 20,
+    },
+    header: {
+        fontSize: 26,
+        fontWeight: 'bold',
+        color: '#c9d1d9',
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#8b949e',
+        marginBottom: 8,
+    },
+    input: {
+        backgroundColor: '#1C2128',
+        borderWidth: 1,
+        borderColor: '#30363D',
+        borderRadius: 10,
+        padding: 12,
+        fontSize: 16,
+        color: '#c9d1d9',
+        marginBottom: 16,
+    },
+    imagePicker: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#1C2128',
+        borderWidth: 1,
+        borderColor: '#30363D',
+        borderRadius: 10,
+        padding: 16,
+        marginBottom: 16,
+    },
+    imagePickerText: {
+        color: '#A5B4FC',
+        marginLeft: 10,
+        fontWeight: '600',
+    },
+    imagePreview: {
+        width: '100%',
+        height: 200,
+        borderRadius: 10,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#30363D',
+    },
+    unitContainer: {
+        flexDirection: 'row',
+        marginBottom: 24,
+        gap: 12,
+    },
+    unitButton: {
+        flex: 1,
+        padding: 12,
+        borderRadius: 10,
+        alignItems: 'center',
+        backgroundColor: '#1C2128',
+        borderWidth: 1,
+        borderColor: '#30363D',
+    },
+    unitButtonSelected: {
+        backgroundColor: '#4F46E5',
+        borderColor: '#4F46E5',
+    },
+    unitButtonText: {
+        color: '#c9d1d9',
+        fontWeight: '600',
+    },
+    unitButtonTextSelected: {
+        color: '#FFFFFF',
+    },
+    submitButton: {
+        backgroundColor: '#4F46E5',
+        padding: 16,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    submitButtonText: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    disabledButton: {
+        opacity: 0.6,
+    },
+});

@@ -13,6 +13,7 @@ export interface Product {
   stock: number;
   category?: string;
   createdAt?: Date;
+  unit:string
 }
 
 export interface Order {

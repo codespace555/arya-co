@@ -1,6 +1,5 @@
-// src/screens/OrdersScreen.tsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View, TextInput, StyleSheet, Alert } from 'react-native';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { ActivityIndicator, FlatList, Text, TouchableOpacity, View, TextInput, StyleSheet, Alert, Animated } from 'react-native';
 import { collection, doc, getDocs, orderBy, query, updateDoc } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
@@ -8,17 +7,19 @@ import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 // Local Imports
 import { db } from '../services/firebase'; // Your firebase config
-import {  User, OrderStatus } from '../types/interfaces'; // Our new types file
-import { OrderCard } from '../components/OrderCard'; // Our new OrderCard
-import { FilterModal } from '../components/FilterModal'; // Our new FilterModal
+import { User, OrderStatus } from '../types/interfaces'; // Using your types file
+import { FilterModal } from '../components/FilterModal'; // Assuming FilterModal is styled separately
 
 // Navigation Imports
 import { StackNavigationProp } from '@react-navigation/stack';
 import { DashboardStackParamList } from '../types/navigation'; // Your navigation types
- interface Order {
+
+// Centralized Order interface
+interface Order {
   id: string;
   userId: string;
   productName: string;
@@ -29,6 +30,64 @@ import { DashboardStackParamList } from '../types/navigation'; // Your navigatio
   orderedAt: { toDate: () => Date };
   deliveryDate: { toDate: () => Date };
 }
+
+// --- Color and Style mapping for Order Status ---
+const statusConfig: { [key in OrderStatus]: { color: string; icon: string } } = {
+    pending: { color: '#F59E0B', icon: 'hourglass-outline' },
+    processing: { color: '#3B82F6', icon: 'sync-circle-outline' },
+    shipped: { color: '#8B5CF6', icon: 'airplane-outline' },
+    delivered: { color: '#10B981', icon: 'checkmark-circle-outline' },
+    cancelled: { color: '#EF4444', icon: 'close-circle-outline' },
+};
+
+// --- Styled OrderCard Component (defined in this file for a complete UI) ---
+const OrderCard = ({ item, user, onStatusUpdate, index }: { item: Order; user: User | undefined; onStatusUpdate: (orderId: string, newStatus: OrderStatus) => void; index: number }) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 500,
+            delay: index * 100,
+            useNativeDriver: true,
+        }).start();
+    }, [fadeAnim, index]);
+
+    const availableStatuses: OrderStatus[] = ["pending", "processing", "shipped", "delivered", "cancelled"];
+
+    return (
+        <Animated.View style={{ opacity: fadeAnim }}>
+            <View style={styles.orderCard}>
+                <View style={styles.cardHeader}>
+                    <View>
+                        <Text style={styles.cardUser}>{user?.name || 'Unknown User'}</Text>
+                        <Text style={styles.cardProduct}>{item.productName}</Text>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: statusConfig[item.status]?.color || '#6B7280' }]}>
+                        <Icon name={statusConfig[item.status]?.icon || 'help-circle-outline'} size={14} color="#fff" />
+                        <Text style={styles.statusText}>{item.status}</Text>
+                    </View>
+                </View>
+                <View style={styles.cardBody}>
+                    <Text style={styles.detailText}>Qty: {item.quantity} {item.unit}</Text>
+                    <Text style={styles.priceText}>₹{item.totalPrice.toFixed(2)}</Text>
+                </View>
+                {/* ✅ FIX: Added status update buttons section */}
+                <View style={styles.actionsContainer}>
+                    {availableStatuses.map(status => (
+                        item.status !== status && (
+                            <TouchableOpacity key={status} style={[styles.actionButton, {borderColor: statusConfig[status].color}]} onPress={() => onStatusUpdate(item.id, status)}>
+                                <Icon name={statusConfig[status].icon} size={16} color={statusConfig[status].color} />
+                            </TouchableOpacity>
+                        )
+                    ))}
+                </View>
+            </View>
+        </Animated.View>
+    );
+};
+
+
 export default function OrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -64,14 +123,11 @@ export default function OrdersScreen() {
     fetchInitialData();
   }, []);
 
-  const userMap = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
+  const userMap = useMemo(() => new Map(users.map(user => user.id ? [user.id, user] : []) as [string, User][]), [users]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       const lowercasedQuery = searchQuery.toLowerCase().trim();
-      if (!statusFilter && !userFilter && !dateFilter && lowercasedQuery === '') {
-          return true; // No filters active, show all
-      }
       const statusMatch = !statusFilter || order.status === statusFilter;
       const userMatch = !userFilter || order.userId === userFilter;
       const dateMatch = !dateFilter || order.deliveryDate.toDate().toDateString() === dateFilter.toDateString();
@@ -115,14 +171,22 @@ export default function OrdersScreen() {
     ]);
   };
 
+  // ✅ FIX: Implemented the export to excel functionality
   const exportToExcel = async () => {
-    if (filteredOrders.length === 0) return Toast.show({ type: 'info', text1: 'No data to export.' });
+    if (filteredOrders.length === 0) {
+      Toast.show({ type: 'info', text1: 'No data to export.' });
+      return;
+    }
     try {
+      Toast.show({ type: 'info', text1: 'Generating Excel file...' });
       const dataToExport = filteredOrders.map(order => ({
         'Customer': userMap.get(order.userId)?.name || 'N/A',
         'Phone': userMap.get(order.userId)?.phone || 'N/A',
-        'Product': order.productName, 'Quantity': order.quantity, 'Unit': order.unit,
-        'Total Price': order.totalPrice, 'Status': order.status,
+        'Product': order.productName,
+        'Quantity': order.quantity,
+        'Unit': order.unit,
+        'Total Price': order.totalPrice,
+        'Status': order.status,
         'Order Date': format(order.orderedAt.toDate(), 'yyyy-MM-dd HH:mm'),
         'Delivery Date': format(order.deliveryDate.toDate(), 'yyyy-MM-dd'),
       }));
@@ -132,32 +196,43 @@ export default function OrdersScreen() {
       const base64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
       const uri = FileSystem.cacheDirectory + 'orders.xlsx';
       await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
-      await Sharing.shareAsync(uri, { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      await Sharing.shareAsync(uri, { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dialogTitle: 'Export Orders Data' });
     } catch (error) {
       console.error("Export Error:", error);
       Toast.show({ type: 'error', text1: 'Export Failed', text2: 'Could not create or share the file.' });
     }
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#1e40af" /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></View>;
 
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
-        <View style={styles.searchBar}><Text>🔍</Text><TextInput placeholder="Search..." value={searchQuery} onChangeText={setSearchQuery} style={styles.searchInput} /></View>
-        <TouchableOpacity style={styles.iconButton} onPress={() => setFilterModalVisible(true)}><Text style={styles.iconText}>📊</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton} onPress={exportToExcel}><Text style={styles.iconText}>📄</Text></TouchableOpacity>
+        <View style={styles.searchBar}>
+            <Icon name="search-outline" size={20} color="#8b949e" />
+            <TextInput 
+                placeholder="Search Orders..." 
+                value={searchQuery} 
+                onChangeText={setSearchQuery} 
+                style={styles.searchInput}
+                placeholderTextColor="#8b949e"
+            />
+        </View>
+        <TouchableOpacity style={styles.iconButton} onPress={() => setFilterModalVisible(true)}>
+            <Icon name="filter-outline" size={22} color="#c9d1d9" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} onPress={exportToExcel}>
+            <Icon name="download-outline" size={22} color="#c9d1d9" />
+        </TouchableOpacity>
       </View>
 
       <FlatList
         data={filteredOrders}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <OrderCard item={item} user={userMap.get(item.userId)} onStatusUpdate={handleStatusUpdate} />}
+        renderItem={({ item, index }) => <OrderCard item={item} user={userMap.get(item.userId)} onStatusUpdate={handleStatusUpdate} index={index} />}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}
         ListEmptyComponent={<View style={styles.center}><Text style={styles.emptyText}>No Orders Found</Text></View>}
       />
-
-      {/* <TouchableOpacity onPress={() => navigation.navigate('AddOrder')} style={styles.fabAdd}><Text style={styles.fabIcon}>+</Text></TouchableOpacity> */}
 
       <FilterModal
         isVisible={isFilterModalVisible}
@@ -171,16 +246,87 @@ export default function OrdersScreen() {
   );
 }
 
-// Add these styles at the bottom of OrdersScreen.tsx
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  headerContainer: { flexDirection: 'row', padding: 12, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', alignItems: 'center' },
-  searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: 10, paddingHorizontal: 10 },
-  searchInput: { flex: 1, height: 40, fontSize: 15, color: '#111827', marginLeft: 8 },
-  iconButton: { marginLeft: 10, padding: 8, backgroundColor: '#f3f4f6', borderRadius: 10 },
-  iconText: { fontSize: 20, color: '#3b82f6' },
-  fabAdd: { position: 'absolute', bottom: 20, right: 20, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', backgroundColor: '#16a34a', elevation: 4 },
-  fabIcon: { fontSize: 30, color: 'white', lineHeight: 32 },
-  emptyText: { fontSize: 16, color: '#6b7280' },
+  container: { flex: 1, backgroundColor: '#0D1117' },
+  headerContainer: { flexDirection: 'row', padding: 12, backgroundColor: '#1C2128', borderBottomWidth: 1, borderBottomColor: '#30363D', alignItems: 'center' },
+  searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D1117', borderRadius: 10, paddingHorizontal: 10, borderWidth: 1, borderColor: '#30363D' },
+  searchInput: { flex: 1, height: 40, fontSize: 15, color: '#c9d1d9', marginLeft: 8 },
+  iconButton: { marginLeft: 10, padding: 8, backgroundColor: '#1C2128', borderRadius: 10, borderWidth: 1, borderColor: '#30363D' },
+  emptyText: { fontSize: 16, color: '#8b949e' },
+  // Order Card Styles
+  orderCard: {
+    backgroundColor: '#1C2128',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#30363D',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  cardUser: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#c9d1d9',
+  },
+  cardProduct: {
+    fontSize: 14,
+    color: '#8b949e',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 6,
+    textTransform: 'capitalize',
+  },
+  cardBody: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#30363D',
+    marginBottom: 12, // Add margin to separate from actions
+  },
+  detailText: {
+    fontSize: 14,
+    color: '#8b949e',
+  },
+  priceText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#c9d1d9',
+  },
+  // New styles for action buttons
+  actionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    borderTopWidth: 1,
+    borderTopColor: '#30363D',
+    paddingTop: 12,
+    marginTop: 4,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 20, // Make it a pill shape
+    marginRight: 8,
+    marginBottom: 8,
+  },
 });

@@ -2,41 +2,60 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   TextInput,
-  Platform,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
   KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
   Modal,
-  TouchableWithoutFeedback,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
+import { collection, addDoc, Timestamp, getDocs } from "firebase/firestore";
+import { db } from "../services/firebase";
+import { useNavigation } from "@react-navigation/native";
 import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import Toast from "react-native-toast-message";
-import { collection, getDocs, addDoc, Timestamp } from "firebase/firestore";
-import { db } from "../services/firebase";
+import Icon from "react-native-vector-icons/Ionicons";
+import { Product, User } from "../types/interfaces"; // Assuming types are in interfaces
+
+// Utility to get tomorrow's date
+function getTomorrow(): Date {
+  const dt = new Date();
+  dt.setDate(dt.getDate() + 1);
+  return dt;
+}
 
 export default function AddOrderScreen() {
-  const [products, setProducts] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const navigation = useNavigation();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [quantity, setQuantity] = useState<string>("");
-  const [selectedDate, setSelectedDate] = useState<Date>(() => getTomorrow());
+  const [deliveryDate, setDeliveryDate] = useState<Date>(getTomorrow());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [userModalVisible, setUserModalVisible] = useState(false);
   const [productModalVisible, setProductModalVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const ps = await getDocs(collection(db, "products"));
-        const us = await getDocs(collection(db, "users"));
-        setProducts(ps.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        setUsers(us.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      } catch {
-        Toast.show({ type: "error", text1: "Failed loading data" });
+        const productsSnapshot = await getDocs(collection(db, "products"));
+        const usersSnapshot = await getDocs(collection(db, "users"));
+        setProducts(productsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Product[]);
+        setUsers(usersSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as User[]);
+      } catch (error) {
+        Toast.show({ type: "error", text1: "Failed to load initial data" });
+        console.error("Data fetch error: ", error);
+      } finally {
+        setLoading(false);
       }
     }
     fetchData();
@@ -44,14 +63,16 @@ export default function AddOrderScreen() {
 
   const handleOrder = async () => {
     if (!selectedProduct || !selectedUser || !quantity) {
-      Toast.show({ type: "error", text1: "Select product, user & quantity" });
+      Toast.show({ type: "error", text1: "Please fill all fields" });
       return;
     }
     const qtyNum = parseInt(quantity);
-    if (qtyNum <= 0) {
-      Toast.show({ type: "error", text1: "Quantity must be > 0" });
+    if (isNaN(qtyNum) || qtyNum <= 0) {
+      Toast.show({ type: "error", text1: "Quantity must be a number greater than 0" });
       return;
     }
+
+    setSaving(true);
     try {
       const total = qtyNum * selectedProduct.price;
       await addDoc(collection(db, "orders"), {
@@ -62,189 +83,219 @@ export default function AddOrderScreen() {
         unit: selectedProduct.unit,
         quantity: qtyNum,
         totalPrice: total,
-        deliveryDate: Timestamp.fromDate(selectedDate),
+        deliveryDate: Timestamp.fromDate(deliveryDate),
         orderedAt: Timestamp.now(),
-        status: "processing",
+        status: "pending",
       });
 
-      Toast.show({ type: "success", text1: "Order placed" });
-      // reset
-      setSelectedProduct(null);
-      setSelectedUser(null);
-      setQuantity("");
-      setSelectedDate(getTomorrow());
-    } catch {
-      Toast.show({ type: "error", text1: "Failed placing order" });
+      Toast.show({ type: "success", text1: "Order placed successfully!" });
+      navigation.goBack();
+    } catch (error) {
+      Toast.show({ type: "error", text1: "Failed to place order" });
+      console.error("Order submission error: ", error);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const orderTotal = selectedProduct
-    ? parseInt(quantity || "0") * selectedProduct.price
-    : 0;
+  const orderTotal = selectedProduct ? (parseInt(quantity) || 0) * selectedProduct.price : 0;
+  const selectedUserName = users.find(u => u.id === selectedUser)?.name || "Select a user";
+  const selectedProductName = selectedProduct?.name || "Select a product";
+
+  if (loading) {
+    return <View style={styles.container}><ActivityIndicator size="large" color="#4F46E5" /></View>;
+  }
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 bg-white p-4"
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.container}
     >
-      <Text className="text-2xl font-bold text-blue-600 mb-6">
-        Place a New Order
-      </Text>
-
-      <View className="space-y-4">
+      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+        <Text style={styles.header}>Create New Order</Text>
 
         {/* User Selection */}
-        <View>
-          <Pressable onPress={() => setUserModalVisible(true)}>
-            <Text className="text-blue-600 underline text-base">Select User</Text>
-          </Pressable>
-          <Text className="mt-1 text-base text-gray-700 font-semibold">
-            {selectedUser
-              ? users.find((u) => u.id === selectedUser)?.name || "User"
-              : "No user selected"}
-          </Text>
-        </View>
+        <Text style={styles.label}>Customer</Text>
+        <TouchableOpacity style={styles.pickerButton} onPress={() => setUserModalVisible(true)}>
+          <Text style={styles.pickerButtonText}>{selectedUserName}</Text>
+          <Icon name="chevron-down-outline" size={20} color="#8b949e" />
+        </TouchableOpacity>
 
         {/* Product Selection */}
-        <View>
-          <Pressable onPress={() => setProductModalVisible(true)}>
-            <Text className="text-blue-600 underline text-base">Select Product</Text>
-          </Pressable>
-          <Text className="mt-1 text-base text-gray-700 font-semibold">
-            {selectedProduct?.name || "No product selected"}
-          </Text>
-        </View>
+        <Text style={styles.label}>Product</Text>
+        <TouchableOpacity style={styles.pickerButton} onPress={() => setProductModalVisible(true)}>
+          <Text style={styles.pickerButtonText}>{selectedProductName}</Text>
+          <Icon name="chevron-down-outline" size={20} color="#8b949e" />
+        </TouchableOpacity>
 
-        {/* Quantity + Total */}
+        {/* Quantity and Price */}
         {selectedProduct && (
-          <View>
-            <Text className="text-gray-700 mb-1">
-              Price : ₹{selectedProduct.price} / {selectedProduct.unit}
-            </Text>
-            <View className="flex-row items-center border rounded mb-2">
-              <TextInput
-                className="flex-1 p-2 text-base"
-                keyboardType="numeric"
-                placeholder="Enter quantity"
-                value={quantity}
-                onChangeText={setQuantity}
-              />
-              <Text className="bg-blue-500 text-white px-3 py-2">
-                {selectedProduct.unit}
-              </Text>
-            </View>
-            <Text className="text-green-700 font-medium">
-              Total Price: ₹{orderTotal.toFixed(2)}
-            </Text>
-          </View>
+          <>
+            <Text style={styles.label}>Quantity ({selectedProduct.unit})</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              placeholder={`e.g., 10`}
+              placeholderTextColor="#8b949e"
+              value={quantity}
+              onChangeText={setQuantity}
+            />
+            <Text style={styles.totalText}>Order Total: ₹{orderTotal.toFixed(2)}</Text>
+          </>
         )}
 
         {/* Delivery Date */}
-        <TouchableOpacity
-          className="p-3 border rounded bg-blue-100"
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Text className="text-blue-800 font-medium">
-            Delivery Date: {format(selectedDate, "dd MMM yyyy")}
-          </Text>
+        <Text style={styles.label}>Delivery Date</Text>
+        <TouchableOpacity style={styles.pickerButton} onPress={() => setShowDatePicker(true)}>
+          <Text style={styles.pickerButtonText}>{format(deliveryDate, "EEEE, dd MMMM yyyy")}</Text>
+          <Icon name="calendar-outline" size={20} color="#8b949e" />
         </TouchableOpacity>
 
         {showDatePicker && (
           <DateTimePicker
-            value={selectedDate}
+            value={deliveryDate}
             mode="date"
             display="default"
             minimumDate={getTomorrow()}
             onChange={(_, d) => {
-              setShowDatePicker(false);
-              if (d) setSelectedDate(d);
+              setShowDatePicker(Platform.OS === 'ios');
+              if (d) setDeliveryDate(d);
             }}
           />
         )}
 
         {/* Submit Button */}
         <TouchableOpacity
-          className="bg-blue-600 p-4 rounded mt-4"
+          style={[styles.submitButton, saving && styles.disabledButton]}
           onPress={handleOrder}
+          disabled={saving}
         >
-          <Text className="text-white text-center font-semibold text-lg">
-            Place Order
-          </Text>
+          {saving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.submitButtonText}>Place Order</Text>
+          )}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {/* User Modal */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={userModalVisible}
-        onRequestClose={() => setUserModalVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setUserModalVisible(false)}>
-          <View className="flex-1 justify-center items-center bg-black/50">
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View className="w-11/12 bg-white rounded-2xl p-4 shadow-lg">
-                <Picker
-                  selectedValue={selectedUser}
-                  onValueChange={setSelectedUser}
-                  mode="dropdown"
-                >
-                  <Picker.Item color="black" label="— Select User —" value={null} />
-                  {users.map((u) => (
-                    <Picker.Item
-                    color="black"
-                      key={u.id}
-                      label={u.name || u.phone}
-                      value={u.id}
-                    />
-                  ))}
-                </Picker>
-              </View>
-            </TouchableWithoutFeedback>
+      <Modal transparent visible={userModalVisible} animationType="fade" onRequestClose={() => setUserModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setUserModalVisible(false)}>
+          <View style={styles.modalContent}>
+            <Picker
+              selectedValue={selectedUser}
+              onValueChange={(itemValue) => {
+                setSelectedUser(itemValue);
+                setUserModalVisible(false);
+              }}
+              itemStyle={{ color: '#c9d1d9' }}
+            >
+              <Picker.Item label="— Select a Customer —" value={null} />
+              {users.map((u) => <Picker.Item key={u.id} label={u.name || u.phone} value={u.id} />)}
+            </Picker>
           </View>
-        </TouchableWithoutFeedback>
+        </Pressable>
       </Modal>
 
       {/* Product Modal */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={productModalVisible}
-        onRequestClose={() => setProductModalVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setProductModalVisible(false)}>
-          <View className="flex-1 justify-center items-center bg-black/50">
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View className="w-11/12 bg-slate-200 text-black rounded-2xl p-4 shadow-lg">
-                <Picker
-                  selectedValue={selectedProduct?.id}
-                  onValueChange={(pid) =>
-                    setSelectedProduct(
-                      products.find((p) => p.id === pid) || null
-                    )
-                  }
-                  mode="dropdown"
-                >
-                  <Picker.Item color="black" label="— Select Product —" value={null} />
-                  {products.map((p) => (
-                    <Picker.Item color="black" key={p.id} label={p.name} value={p.id} />
-                  ))}
-                </Picker>
-              </View>
-            </TouchableWithoutFeedback>
+      <Modal transparent visible={productModalVisible} animationType="fade" onRequestClose={() => setProductModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setProductModalVisible(false)}>
+          <View style={styles.modalContent}>
+            <Picker
+              selectedValue={selectedProduct?.id}
+              onValueChange={(itemValue) => {
+                setSelectedProduct(products.find(p => p.id === itemValue) || null);
+                setProductModalVisible(false);
+              }}
+              itemStyle={{ color: '#c9d1d9' }}
+            >
+              <Picker.Item label="— Select a Product —" value={null} />
+              {products.map((p) => <Picker.Item key={p.id} label={`${p.name} (₹${p.price}/${p.unit})`} value={p.id} />)}
+            </Picker>
           </View>
-        </TouchableWithoutFeedback>
+        </Pressable>
       </Modal>
-
-      <Toast />
     </KeyboardAvoidingView>
   );
 }
 
-// Utility
-function getTomorrow(): Date {
-  const dt = new Date();
-  dt.setDate(dt.getDate() + 1);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-}
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#0D1117',
+    },
+    scrollViewContent: {
+        padding: 20,
+    },
+    header: {
+        fontSize: 26,
+        fontWeight: 'bold',
+        color: '#c9d1d9',
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#8b949e',
+        marginBottom: 8,
+    },
+    input: {
+        backgroundColor: '#1C2128',
+        borderWidth: 1,
+        borderColor: '#30363D',
+        borderRadius: 10,
+        padding: 12,
+        fontSize: 16,
+        color: '#c9d1d9',
+        marginBottom: 16,
+    },
+    pickerButton: {
+        backgroundColor: '#1C2128',
+        borderWidth: 1,
+        borderColor: '#30363D',
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 16,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    pickerButtonText: {
+        fontSize: 16,
+        color: '#c9d1d9',
+    },
+    totalText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#4F46E5',
+        textAlign: 'right',
+        marginBottom: 16,
+    },
+    submitButton: {
+        backgroundColor: '#4F46E5',
+        padding: 16,
+        borderRadius: 10,
+        alignItems: 'center',
+        marginTop: 16,
+    },
+    submitButtonText: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    disabledButton: {
+        opacity: 0.6,
+    },
+    modalBackdrop: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    },
+    modalContent: {
+        backgroundColor: '#1C2128',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 16,
+    },
+});

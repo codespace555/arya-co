@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  StyleSheet,
+  TextInput,
+  Animated,
 } from "react-native";
 import {
   collection,
@@ -23,6 +26,7 @@ import { DrawerNavigationProp } from "@react-navigation/drawer";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { DrawerParamList, DashboardStackParamList } from "../types/navigation";
 import Toast from "react-native-toast-message";
+import Icon from "react-native-vector-icons/Ionicons";
 
 export interface Product {
   id: string;
@@ -42,10 +46,55 @@ type NavProp = CompositeNavigationProp<
   NativeStackNavigationProp<DashboardStackParamList>
 >;
 
+// --- Animated Product Card Component ---
+const ProductCard = ({ item, index, onEdit, onDelete }: { item: Product, index: number, onEdit: () => void, onDelete: () => void }) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 500,
+            delay: index * 100, // Stagger animation
+            useNativeDriver: true,
+        }).start();
+    }, [fadeAnim, index]);
+
+    return (
+        <Animated.View style={{ opacity: fadeAnim }}>
+            <View style={styles.productCard}>
+                {item.imageUrl ? (
+                    <Image source={{ uri: item.imageUrl }} style={styles.productImage} />
+                ) : (
+                    <View style={styles.imagePlaceholder}>
+                        <Icon name="image-outline" size={40} color="#4b5563" />
+                    </View>
+                )}
+                <View style={styles.productDetails}>
+                    <Text style={styles.productName}>{item.name}</Text>
+                    <Text style={styles.productPrice}>₹{item.price} <Text style={styles.productUnit}>/ {item.unit}</Text></Text>
+                    <Text style={styles.productQuantity}>Stock: {item.quantity || 0}</Text>
+                    <View style={styles.buttonRow}>
+                        <TouchableOpacity style={[styles.actionButton, styles.editButton]} onPress={onEdit}>
+                            <Icon name="pencil-outline" size={16} color="#fff" />
+                            <Text style={styles.actionButtonText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={onDelete}>
+                            <Icon name="trash-outline" size={16} color="#fff" />
+                            <Text style={styles.actionButtonText}>Delete</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Animated.View>
+    );
+};
+
+
 export default function ProductList() {
   const navigation = useNavigation<NavProp>();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -67,6 +116,14 @@ export default function ProductList() {
     return () => unsubscribe();
   }, []);
 
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery) {
+        return products;
+    }
+    const lowercasedQuery = searchQuery.toLowerCase();
+    return products.filter(product => product.name.toLowerCase().includes(lowercasedQuery));
+  }, [products, searchQuery]);
+
   const handleDelete = (id: string) => {
     Alert.alert(
       "Confirm Delete",
@@ -78,9 +135,6 @@ export default function ProductList() {
           onPress: async () => {
             try {
               await deleteDoc(doc(db, "products", id));
-              setProducts((prev) =>
-                prev.filter((product) => product.id !== id)
-              );
               Toast.show({
                 type: "success",
                 text1: "Product deleted successfully",
@@ -90,103 +144,189 @@ export default function ProductList() {
               Toast.show({
                 type: "error",
                 text1: "Failed to delete product",
-                text2: error instanceof Error ? error.message : "Unknown error",
               });
             }
           },
         },
-      ],
-      { cancelable: false }
+      ]
     );
   };
 
-  const renderProduct = ({ item }: { item: Product }) => (
-    <View className="flex-row bg-white border border-gray-200 rounded-xl  shadow-md overflow-hidden">
-      <View>
-        {/* Image Section */}
-        {item.imageUrl ? (
-          <Image
-            source={{ uri: item.imageUrl }}
-            className="w-36 h-36"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="w-32 h-32 bg-gray-100 justify-center items-center">
-            <Text className="text-xs text-gray-400">No Image</Text>
-          </View>
-        )}
-      </View>
-      {/* Content Section */}
-      <View className="flex-1 p-4 justify-between">
-        <View>
-          <Text className="text-lg font-semibold text-gray-800 mb-1">
-            {item.name}
-          </Text>
-          <Text className="text-sm text-gray-600 mb-1">
-            ₹ {item.price} • {item.quantity} {item.unit}
-          </Text>
-          {item.description ? (
-            <Text className="text-sm text-gray-500 mb-2" numberOfLines={2}>
-              {item.description}
-            </Text>
-          ) : null}
-        </View>
+  const handleEdit = (product: Product) => {
+    navigation.navigate("Dashboard", {
+        screen: "AddProduct",
+        params: { product },
+    } as never);
+  };
 
-        {/* Action Buttons */}
-        <View className="flex-row mt-2">
-          <TouchableOpacity
-            className="bg-blue-600 px-3 py-1 rounded-md mr-2"
-            onPress={() =>
-              navigation.navigate("Dashboard", {
-                screen: "AddProduct",
-                params: { product: item },
-              } as never)
-            }
-          >
-            <Text className="text-white text-sm font-medium">Edit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="bg-red-600 px-3 py-1 rounded-md"
-            onPress={() => handleDelete(item.id)}
-          >
-            <Text className="text-white text-sm font-medium">Delete</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
+  const handleAddNew = () => {
+    navigation.navigate("Dashboard", {
+        screen: "AddProduct",
+    } as never);
+  };
 
   return (
-    <View className="flex-1  px-4 py-12">
+    <View style={styles.container}>
+      <View style={styles.searchContainer}>
+        <Icon name="search-outline" size={20} color="#8b949e" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search products..."
+          placeholderTextColor="#8b949e"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+
       {loading ? (
-        <ActivityIndicator size="large" color="#1e40af" />
-      ) : products.length === 0 ? (
-        <Text className="text-center text-gray-500 mt-4">
-          No products found.
-        </Text>
+        <ActivityIndicator size="large" color="#4F46E5" style={{ flex: 1 }}/>
       ) : (
         <FlatList
-          data={products}
+          data={filteredProducts}
           keyExtractor={(item) => item.id}
-          renderItem={renderProduct}
-          showsVerticalScrollIndicator={false}
+          renderItem={({ item, index }) => (
+            <ProductCard 
+                item={item} 
+                index={index} 
+                onEdit={() => handleEdit(item)} 
+                onDelete={() => handleDelete(item.id)}
+            />
+          )}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No products found.</Text>
+            </View>
+          }
         />
       )}
 
-      {/* Add Button */}
-      <TouchableOpacity
-        className="bg-blue-600 p-4 rounded-2xl mt-6 shadow-md"
-        onPress={() =>
-          navigation.navigate("Dashboard", {
-            screen: "AddProduct",
-            params: { product: {} },
-          } as never)
-        }
-      >
-        <Text className="text-white text-lg font-semibold text-center">
-          Add Product
-        </Text>
+      {/* Add Product FAB */}
+      <TouchableOpacity style={styles.fab} onPress={handleAddNew}>
+        <Icon name="add-outline" size={30} color="#fff" />
       </TouchableOpacity>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#0D1117', // Black background
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#1C2128',
+        borderRadius: 12,
+        margin: 16,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: '#30363D',
+    },
+    searchIcon: {
+        marginRight: 8,
+    },
+    searchInput: {
+        flex: 1,
+        height: 44,
+        color: '#c9d1d9',
+        fontSize: 16,
+    },
+    productCard: {
+        backgroundColor: '#1C2128',
+        borderRadius: 12,
+        marginBottom: 16,
+        flexDirection: 'row',
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#30363D',
+    },
+    productImage: {
+        width: 120,
+        height: '100%',
+    },
+    imagePlaceholder: {
+        width: 120,
+        height: '100%',
+        backgroundColor: '#30363D',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    productDetails: {
+        flex: 1,
+        padding: 12,
+        justifyContent: 'space-between',
+    },
+    productName: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#c9d1d9',
+    },
+    productPrice: {
+        fontSize: 16,
+        color: '#4F46E5', // Blue accent for price
+        fontWeight: '600',
+        marginTop: 4,
+    },
+    productUnit: {
+        fontSize: 14,
+        color: '#8b949e',
+        fontWeight: 'normal',
+    },
+    productQuantity: {
+        fontSize: 14,
+        color: '#8b949e',
+        marginTop: 4,
+    },
+    buttonRow: {
+        flexDirection: 'row',
+        marginTop: 12,
+    },
+    actionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+    },
+    actionButtonText: {
+        color: '#fff',
+        fontWeight: '600',
+        fontSize: 14,
+        marginLeft: 6,
+    },
+    editButton: {
+        backgroundColor: '#4F46E5', // Blue
+        marginRight: 8,
+    },
+    deleteButton: {
+        backgroundColor: '#D92626', // Red
+    },
+    fab: {
+        position: 'absolute',
+        bottom: 30,
+        right: 30,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#4F46E5', // Blue
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 8,
+        shadowColor: '#4F46E5',
+        shadowRadius: 8,
+        shadowOpacity: 0.4,
+        shadowOffset: { height: 4, width: 0 },
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 50,
+    },
+    emptyText: {
+        color: '#8b949e',
+        fontSize: 16,
+    },
+});
