@@ -1,20 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import {  FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { doc, onSnapshot } from '@react-native-firebase/firestore';
 import { View, ActivityIndicator } from 'react-native';
 
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import DrawerNavigator from './DrawerNavigator'; // Admin
 import CustomerDrawer from './CustomerDrawer'; // Customer
-import { auth, db } from '../services/firebase'; // Correct path to your firebase config
+import {authInstance as auth, db } from '../services/firebase'; // Correct path to your firebase config
 import { RootStackParamList } from '../types/navigation'; // Correct path to your types
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [role, setRole] = useState<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
@@ -24,41 +24,51 @@ export default function AppNavigator() {
     let firestoreUnsubscribe: () => void = () => {};
 
     // Listen for changes to the user's authentication state
-    const authUnsubscribe = onAuthStateChanged(auth, (authUser) => {
-      // Unsubscribe from any previous Firestore listener
-      if (firestoreUnsubscribe) {
-        firestoreUnsubscribe();
-      }
+   const authUnsubscribe = auth.onAuthStateChanged((authUser) => {
+  // Unsubscribe from any previous Firestore listener
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
+  }
 
-      setUser(authUser);
+  setUser(authUser);
 
-      if (authUser) {
-        // If user is logged in, listen for changes to their user document
-        const userDocRef = doc(db, 'users', authUser.uid);
-        firestoreUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const userData = docSnap.data();
+  if (authUser) {
+    // If user is logged in, listen for changes to their user document
+    const userDocRef = doc(db, 'users', authUser.uid);
+    firestoreUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      // CORRECTED LINE: Access .exists as a property, not a function
+      if (docSnap.exists) { // <--- REMOVE PARENTHESES HERE
+        const userData = docSnap.data();
+        // The 'userData is possibly undefined' error usually needs a check on userData itself,
+        // or a type assertion if you are confident docSnap.exists implies data() is non-null.
+        // Let's add an explicit check to be safe:
+        if (userData) { // Added this check for safety
             setRole(userData.role);
             setIsRegistered(true);
-          } else {
-            // User is authenticated but doesn't have a document in Firestore
+        } else {
+            // Document exists but is empty, treat as not registered or handle specifically
             setRole(null);
             setIsRegistered(false);
-          }
-          // We have checked the user's status, so we can stop initializing
-          if (initializing) {
-            setInitializing(false);
-          }
-        });
+        }
       } else {
-        // User is logged out, clear all user-related state
+        // User is authenticated but doesn't have a document in Firestore
         setRole(null);
         setIsRegistered(false);
-        if (initializing) {
-          setInitializing(false);
-        }
+      }
+      // We have checked the user's status, so we can stop initializing
+      if (initializing) {
+        setInitializing(false);
       }
     });
+  } else {
+    // User is logged out, clear all user-related state
+    setRole(null);
+    setIsRegistered(false);
+    if (initializing) {
+      setInitializing(false);
+    }
+  }
+});
 
     // Return a cleanup function to unsubscribe from all listeners on unmount
     return () => {

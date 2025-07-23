@@ -14,11 +14,10 @@ import {
 import {
   collection,
   onSnapshot,
-  QuerySnapshot,
-  DocumentData,
   doc,
   deleteDoc,
-} from "firebase/firestore";
+   FirebaseFirestoreTypes,
+} from "@react-native-firebase/firestore";
 import { db } from "../services/firebase";
 import { useNavigation } from "@react-navigation/native";
 import { CompositeNavigationProp } from "@react-navigation/native";
@@ -99,7 +98,7 @@ export default function ProductList() {
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "products"),
-      (snapshot: QuerySnapshot<DocumentData>) => {
+      (snapshot:  FirebaseFirestoreTypes.QuerySnapshot< FirebaseFirestoreTypes.DocumentData>) => {
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),

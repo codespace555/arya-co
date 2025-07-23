@@ -9,7 +9,7 @@ import {
   TextInput,
   Animated,
 } from "react-native";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs } from "@react-native-firebase/firestore";
 import { db } from "../services/firebase";
 import {
   CompositeNavigationProp,

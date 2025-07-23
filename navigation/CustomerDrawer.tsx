@@ -14,7 +14,7 @@ import {
   DrawerItemList,
   DrawerContentComponentProps,
 } from "@react-navigation/drawer";
-import { auth } from "../services/firebase"; // Your firebase config
+import { authInstance as auth } from "../services/firebase"; // Your firebase config
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 // Import your screens

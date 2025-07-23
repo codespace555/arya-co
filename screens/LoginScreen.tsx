@@ -16,9 +16,9 @@ import {
 import { Feather, Ionicons } from '@expo/vector-icons'; // Changed to Ionicons for a different icon
 import * as Animatable from 'react-native-animatable';
 import { LinearGradient } from 'expo-linear-gradient';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
-import { auth, firebaseConfig } from '../services/firebase'; // Ensure this path is correct
+import auth from '@react-native-firebase/auth';
+// import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-/recaptcha';
+// import { PhoneAuthProvider, signInWithCredential } from 'firebase/auth';// Ensure this path 
 import Toast from 'react-native-toast-message';
 
 // Use 'nativewind' for Tailwind CSS in React Native.
@@ -27,50 +27,47 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [code, setCode] = useState('');
-  const recaptchaVerifier = useRef(null);
+  // const recaptchaVerifier = useRef(null);
 
   /**
    * Sends a verification code to the user's phone number.
    */
-  const sendVerification = async () => {
+  
+
+ const sendVerification = async () => {
     if (!phone || phone.length < 10) {
       Toast.show({ type: 'error', text1: 'Please enter a valid 10-digit phone number.' });
       return;
     }
+
     try {
-      const phoneProvider = new PhoneAuthProvider(auth);
-      const id = await phoneProvider.verifyPhoneNumber(
-        `+91${phone}`, // Assuming +91 country code
-        recaptchaVerifier.current!
-      );
-      setVerificationId(id);
-      Toast.show({ type: 'success', text1: 'Verification code sent!' });
-    } catch (error) {
+      const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
+      setVerificationId(confirmation.verificationId);
+      Toast.show({ type: 'success', text1: 'OTP sent!' });
+    } catch (error: any) {
       console.error(error);
-      Toast.show({ type: 'error', text1: 'Failed to send OTP.', text2: 'Please try again later.' });
+      Toast.show({ type: 'error', text1: 'Failed to send OTP', text2: error.message });
     }
   };
 
   /**
    * Confirms the OTP code and signs the user in.
    */
-  const confirmCode = async () => {
-    if (!code || code.length < 6) {
+   const confirmCode = async () => {
+    if (!code || code.length !== 6 || !verificationId) {
       Toast.show({ type: 'error', text1: 'Please enter the 6-digit OTP.' });
       return;
     }
+
     try {
-      const credential = PhoneAuthProvider.credential(verificationId!, code);
-      await signInWithCredential(auth, credential);
-      Toast.show({ type: 'success', text1: '🎉 Welcome!', text2: 'You are now logged in.' });
-      // navigation.navigate('Home'); // Navigate to home screen on success
-    } catch (error) {
+  const credential = auth.PhoneAuthProvider.credential(verificationId, code);
+
+      await auth().signInWithCredential(credential);
+      Toast.show({ type: 'success', text1: '🎉 Welcome!', text2: 'Login successful!' });
+      // Navigate to Home if needed
+    } catch (error: any) {
       console.error(error);
-      Toast.show({
-        type: 'error',
-        text1: 'Invalid OTP',
-        text2: 'Please check the code and try again.',
-      });
+      Toast.show({ type: 'error', text1: 'Invalid OTP', text2: error.message });
     }
   };
 
@@ -82,7 +79,7 @@ export default function LoginScreen() {
         colors={['#1D2B64', '#000000']} // Dark blue to black gradient
         style={StyleSheet.absoluteFill}
       />
-      <FirebaseRecaptchaVerifierModal ref={recaptchaVerifier} firebaseConfig={firebaseConfig} />
+      
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -213,7 +210,6 @@ export default function LoginScreen() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   textShadow: {
     textShadowColor: 'rgba(0, 0, 0, 0.4)',

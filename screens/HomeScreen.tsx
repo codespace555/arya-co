@@ -13,8 +13,10 @@ import {
   SafeAreaView,
   Animated,
 } from "react-native";
-import { collection, getDocs, addDoc, Timestamp } from "firebase/firestore";
-import { db, auth } from "../services/firebase";
+
+import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
+
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import Toast from "react-native-toast-message";
@@ -47,7 +49,6 @@ interface ProductCardProps {
   orderData: OrderData;
   handlers: CardHandlers;
 }
-
 
 // -- Animated Product Card Component --
 const ProductCard = ({ item, orderData, handlers }: ProductCardProps) => {
@@ -125,13 +126,12 @@ const ProductCard = ({ item, orderData, handlers }: ProductCardProps) => {
   );
 };
 
-
 // -- Main HomeScreen Component --
 export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<{ [key: string]: OrderData }>({});
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // State for Description Modal
   const [isDescModalVisible, setIsDescModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -141,20 +141,22 @@ export default function HomeScreen() {
   const [editingDateForProduct, setEditingDateForProduct] = useState<Product | null>(null);
   const [tempDate, setTempDate] = useState(new Date());
 
-  const userId = auth.currentUser?.uid;
+  const userId = auth().currentUser?.uid;
 
-  useEffect(() => { /* ... fetchProducts logic is unchanged ... */
+  useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const snapshot = await getDocs(collection(db, "products"));
-        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<Product, "id">)}));
+        const snapshot = await firestore().collection('products').get();
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<Product, "id">) }));
         setProducts(data);
-      } catch (err) { Toast.show({ type: "error", text1: "Failed to load products" }); }
+      } catch (err) {
+        Toast.show({ type: "error", text1: "Failed to load products" });
+      }
     };
     fetchProducts();
   }, []);
 
-  const filteredProducts = useMemo(() => { /* ... filtering logic is unchanged ... */
+  const filteredProducts = useMemo(() => {
     if (!searchQuery) return products;
     return products.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [products, searchQuery]);
@@ -170,7 +172,7 @@ export default function HomeScreen() {
     const newQuantity = Math.max(0, currentQuantity + amount);
     handleQuantityChange(id, newQuantity.toString());
   };
-  
+
   const openDateModal = (product: Product) => {
     setEditingDateForProduct(product);
     const tomorrow = new Date();
@@ -179,7 +181,7 @@ export default function HomeScreen() {
     setTempDate(currentDate);
     setIsDateModalVisible(true);
   };
-  
+
   const confirmDateSelection = () => {
     if (editingDateForProduct) {
       setOrders(prev => ({
@@ -191,28 +193,45 @@ export default function HomeScreen() {
     setEditingDateForProduct(null);
   };
 
-  const handleOrder = async (product: Product) => { /* ... handleOrder logic is unchanged ... */
+  const handleOrder = async (product: Product) => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const { quantity, date } = orders[product.id] || {};
-    if (!userId) { Toast.show({ type: "error", text1: "Login required" }); return; }
-    if (!quantity || parseInt(quantity, 10) <= 0) { Toast.show({ type: "error", text1: "Please enter a valid quantity" }); return; }
+
+    if (!userId) {
+      Toast.show({ type: "error", text1: "Login required" });
+      return;
+    }
+    if (!quantity || parseInt(quantity, 10) <= 0) {
+      Toast.show({ type: "error", text1: "Please enter a valid quantity" });
+      return;
+    }
+
     try {
-      await addDoc(collection(db, "orders"), {
-        userId, productId: product.id, productName: product.name, price: product.price, unit: product.unit,
-        quantity: parseInt(quantity, 10), deliveryDate: Timestamp.fromDate(date || tomorrow), orderedAt: Timestamp.now(),
-        status: "processing", totalPrice: parseInt(quantity, 10) * product.price,
+      await firestore().collection('orders').add({
+        userId,
+        productId: product.id,
+        productName: product.name,
+        price: product.price,
+        unit: product.unit,
+        quantity: parseInt(quantity, 10),
+        deliveryDate: date || tomorrow,
+        orderedAt: firestore.FieldValue.serverTimestamp(),
+        status: "processing",
+        totalPrice: parseInt(quantity, 10) * product.price,
       });
       Toast.show({ type: "success", text1: "Order placed successfully!" });
       setOrders((prev) => ({ ...prev, [product.id]: {} }));
-    } catch (err) { Toast.show({ type: "error", text1: "Failed to place order" }); }
+    } catch (err) {
+      Toast.show({ type: "error", text1: "Failed to place order" });
+    }
   };
 
   const openDescriptionModal = (product: Product) => {
     setSelectedProduct(product);
     setIsDescModalVisible(true);
   };
-  
+
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -237,37 +256,37 @@ export default function HomeScreen() {
             />
           )}
         />
-        
+
         {/* Description Modal */}
         <Modal animationType="fade" transparent={true} visible={isDescModalVisible} onRequestClose={() => setIsDescModalVisible(false)}>
-            <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                    <Text style={styles.modalTitle}>{selectedProduct?.name}</Text>
-                    <Text style={styles.modalDescription}>{selectedProduct?.description}</Text>
-                    <TouchableOpacity style={styles.modalCloseButton} onPress={() => setIsDescModalVisible(false)}>
-                        <Text style={styles.modalCloseButtonText}>✕</Text>
-                    </TouchableOpacity>
-                </View>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>{selectedProduct?.name}</Text>
+              <Text style={styles.modalDescription}>{selectedProduct?.description}</Text>
+              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setIsDescModalVisible(false)}>
+                <Text style={styles.modalCloseButtonText}>✕</Text>
+              </TouchableOpacity>
             </View>
+          </View>
         </Modal>
 
         {/* Date Picker Modal */}
         <Modal animationType="fade" transparent={true} visible={isDateModalVisible} onRequestClose={() => setIsDateModalVisible(false)}>
-            <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                    <Text style={styles.modalTitle}>Select Delivery Date</Text>
-                    <DateTimePicker
-                        value={tempDate}
-                        mode="date"
-                        display="inline" // Shows the full calendar
-                        minimumDate={tomorrow}
-                        onChange={(event, date) => setTempDate(date || tempDate)}
-                    />
-                    <TouchableOpacity style={styles.confirmButton} onPress={confirmDateSelection}>
-                        <Text style={styles.confirmButtonText}>Confirm</Text>
-                    </TouchableOpacity>
-                </View>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Delivery Date</Text>
+              <DateTimePicker
+                value={tempDate}
+                mode="date"
+                display="inline" // Shows the full calendar
+                minimumDate={tomorrow}
+                onChange={(event, date) => setTempDate(date || tempDate)}
+              />
+              <TouchableOpacity style={styles.confirmButton} onPress={confirmDateSelection}>
+                <Text style={styles.confirmButtonText}>Confirm</Text>
+              </TouchableOpacity>
             </View>
+          </View>
         </Modal>
 
       </KeyboardAvoidingView>
@@ -276,41 +295,42 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#050816' },
-    headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center', paddingVertical: 16 },
-    searchContainer: { backgroundColor: '#1c2a41', flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, borderRadius: 12, marginBottom: 16, paddingHorizontal: 16, },
-    searchIcon: { fontSize: 20, marginRight: 12, color: '#94a3b8' },
-    searchInput: { flex: 1, height: 50, color: '#fff', fontSize: 16 },
-    card: { backgroundColor: '#10172a', borderRadius: 16, padding: 16, marginBottom: 16, borderColor: '#334155', borderWidth: 1, elevation: 8, },
-    infoContainer: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
-    productImage: { width: 90, height: 90, borderRadius: 12, marginRight: 16 },
-    textContainer: { flex: 1 },
-    productName: { fontSize: 20, fontWeight: 'bold', color: '#f0f4f8' },
-    productPrice: { fontSize: 16, color: '#94a3b8', marginTop: 4 },
-    detailsButton: { color: '#60a5fa', marginTop: 8, fontSize: 14, fontWeight: '600' },
-    controlsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16, gap: 16 },
-    controlLabel: { color: '#cbd5e1', fontSize: 14, marginBottom: 8, fontWeight: '500' },
-    quantityWrapper: { flex: 1 },
-    dateWrapper: { flex: 1 },
-    quantityInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a3b57', borderRadius: 12, height: 52, },
-    quantityButton: { width: 50, height: '100%', alignItems: 'center', justifyContent: 'center', },
-    decreaseButton: { backgroundColor: '#ef4444', borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }, // RED
-    increaseButton: { backgroundColor: '#22c55e', borderTopRightRadius: 12, borderBottomRightRadius: 12 }, // GREEN
-    quantityButtonText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-    quantityInput: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    datePickerButton: { backgroundColor: '#f97316', paddingVertical: 12, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', }, // ORANGE
-    datePickerText: { color: '#fff', fontWeight: 'bold' },
-    totalText: { color: '#4ade80', fontSize: 18, fontWeight: 'bold', textAlign: 'right', marginBottom: 16 },
-    orderButton: { paddingVertical: 18, borderRadius: 12, alignItems: 'center' },
-    orderButtonActive: { backgroundColor: '#3b82f6' }, // BLUE
-    orderButtonDisabled: { backgroundColor: '#334155' },
-    orderButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.8)' },
-    modalContent: { backgroundColor: '#1e293b', borderRadius: 12, padding: 24, margin: 24, width: '90%', position: 'relative', borderColor: '#334155', borderWidth: 1, alignItems: 'center' },
-    modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff', marginBottom: 16 },
-    modalDescription: { fontSize: 16, color: '#cbd5e1', lineHeight: 24, textAlign: 'center' },
-    modalCloseButton: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center', },
-    modalCloseButtonText: { color: '#fff', fontSize: 16 },
-    confirmButton: { backgroundColor: '#22c55e', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 12, marginTop: 16, },
-    confirmButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: '#050816' },
+  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center', paddingVertical: 16 },
+  searchContainer: { backgroundColor: '#1c2a41', flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, borderRadius: 12, marginBottom: 16, paddingHorizontal: 16, },
+  searchIcon: { fontSize: 20, marginRight: 12, color: '#94a3b8' },
+  searchInput: { flex: 1, height: 50, color: '#fff', fontSize: 16 },
+  card: { backgroundColor: '#10172a', borderRadius: 16, padding: 16, marginBottom: 16, borderColor: '#334155', borderWidth: 1, elevation: 8, },
+  infoContainer: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
+  productImage: { width: 90, height: 90, borderRadius: 12, marginRight: 16 },
+  textContainer: { flex: 1 },
+  productName: { fontSize: 20, fontWeight: 'bold', color: '#f0f4f8' },
+  productPrice: { fontSize: 16, color: '#94a3b8', marginTop: 4 },
+  detailsButton: { color: '#60a5fa', marginTop: 8, fontSize: 14, fontWeight: '600' },
+  controlsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16, gap: 16 },
+  controlLabel: { color: '#cbd5e1', fontSize: 14, marginBottom: 8, fontWeight: '500' },
+  quantityWrapper: { flex: 1 },
+  dateWrapper: { flex: 1 },
+  quantityInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a3b57', borderRadius: 12, height: 52, },
+  quantityButton: { width: 50, height: '100%', alignItems: 'center', justifyContent: 'center', },
+  decreaseButton: { backgroundColor: '#334155', borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
+  increaseButton: { backgroundColor: '#3b82f6', borderTopRightRadius: 12, borderBottomRightRadius: 12 },
+  quantityButtonText: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  quantityInput: { flex: 1, height: '100%', color: '#fff', fontSize: 18, textAlign: 'center', paddingVertical: 0 },
+  datePickerButton: { backgroundColor: '#2a3b57', height: 52, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  datePickerText: { color: '#94a3b8', fontSize: 16, fontWeight: '600' },
+  totalText: { fontSize: 16, fontWeight: '600', color: '#60a5fa', marginBottom: 8 },
+  orderButton: { height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  orderButtonActive: { backgroundColor: '#3b82f6' },
+  orderButtonDisabled: { backgroundColor: '#64748b' },
+  orderButtonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
+  modalContent: { backgroundColor: '#152e53', borderRadius: 20, padding: 24, width: "100%" },
+  modalTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginBottom: 12, textAlign: 'center' },
+  modalDescription: { fontSize: 16, color: '#d1d5db', lineHeight: 22, marginBottom: 20 },
+  modalCloseButton: { position: 'absolute', top: 16, right: 16 },
+  modalCloseButtonText: { fontSize: 28, color: '#94a3b8' },
+  confirmButton: { backgroundColor: '#3b82f6', borderRadius: 12, paddingVertical: 14, marginTop: 16 },
+  confirmButtonText: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
 });

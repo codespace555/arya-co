@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, Animated, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db } from '../services/firebase';
-import { DashboardStackParamList } from '../types/navigation';
-import {  OrderStatus, User } from '../types/interfaces'; // Ensure User is also imported
+import firestore from '@react-native-firebase/firestore';
 import Icon from 'react-native-vector-icons/Ionicons';
 
+import { DashboardStackParamList } from '../types/navigation';
+import { OrderStatus, User } from '../types/interfaces';
+
 type DashboardScreenProp = NativeStackNavigationProp<DashboardStackParamList>;
+
 interface Order {
   id: string;
   userId: string;
@@ -20,47 +21,48 @@ interface Order {
   orderedAt: { toDate: () => Date };
   deliveryDate: { toDate: () => Date };
 }
-// --- Color and Style mapping for Order Status ---
+
+// Status color and icon config
 const statusConfig: { [key in OrderStatus]: { color: string; icon: string } } = {
-    pending: { color: '#F59E0B', icon: 'hourglass-outline' },
-    processing: { color: '#3B82F6', icon: 'sync-circle-outline' },
-    shipped: { color: '#8B5CF6', icon: 'airplane-outline' },
-    delivered: { color: '#10B981', icon: 'checkmark-circle-outline' },
-    cancelled: { color: '#EF4444', icon: 'close-circle-outline' },
+  pending: { color: '#F59E0B', icon: 'hourglass-outline' },
+  processing: { color: '#3B82F6', icon: 'sync-circle-outline' },
+  shipped: { color: '#8B5CF6', icon: 'airplane-outline' },
+  delivered: { color: '#10B981', icon: 'checkmark-circle-outline' },
+  cancelled: { color: '#EF4444', icon: 'close-circle-outline' },
 };
 
-// --- Animated Order Card Component ---
-const OrderCard = ({ order, user, index }: { order: Order, user: User | undefined, index: number }) => {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
+// Animated order card
+const OrderCard = ({ order, user, index }: { order: Order; user: User | undefined; index: number }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-    useEffect(() => {
-        Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 500,
-            delay: index * 100,
-            useNativeDriver: true,
-        }).start();
-    }, [fadeAnim, index]);
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      delay: index * 100,
+      useNativeDriver: true,
+    }).start();
+  }, [fadeAnim, index]);
 
-    return (
-        <Animated.View style={{ opacity: fadeAnim }}>
-            <View style={styles.orderCard}>
-                <View>
-                    <Text style={styles.orderProduct}>{order.productName}</Text>
-                    <Text style={styles.orderUser}>For: {user?.name || 'Unknown User'}</Text>
-                </View>
-                <View style={[styles.statusBadge, { backgroundColor: statusConfig[order.status]?.color || '#6B7280' }]}>
-                  <Icon name={statusConfig[order.status]?.icon || 'help-circle-outline'} size={12} color="#fff" />
-                  <Text style={styles.orderStatus}>{order.status}</Text>
-                </View>
-            </View>
-        </Animated.View>
-    );
+  return (
+    <Animated.View style={{ opacity: fadeAnim }}>
+      <View style={styles.orderCard}>
+        <View>
+          <Text style={styles.orderProduct}>{order.productName}</Text>
+          <Text style={styles.orderUser}>For: {user?.name || 'Unknown User'}</Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: statusConfig[order.status]?.color || '#6B7280' }]}>
+          <Icon name={statusConfig[order.status]?.icon || 'help-circle-outline'} size={12} color="#fff" />
+          <Text style={styles.orderStatus}>{order.status}</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
 };
-
 
 export default function Dashboard() {
   const navigation = useNavigation<DashboardScreenProp>();
+
   const [loading, setLoading] = useState(true);
   const [totalProducts, setTotalProducts] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
@@ -71,37 +73,55 @@ export default function Dashboard() {
   const [userMap, setUserMap] = useState<Map<string, User>>(new Map());
 
   useEffect(() => {
-    const productUnsub = onSnapshot(collection(db, 'products'), (snapshot) => setTotalProducts(snapshot.size));
-    const userUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setTotalUsers(snapshot.size);
-      const users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as User[];
-      const newMap = users.reduce((map, user) => {
-        if (user.id) map.set(user.id, user);
-        return map;
-      }, new Map<string, User>());
-      setUserMap(newMap);
-    });
+    const productUnsub = firestore()
+      .collection('products')
+      .onSnapshot(snapshot => setTotalProducts(snapshot.size));
 
-    const ordersQuery = query(collection(db, 'orders'), orderBy('orderedAt', 'desc'));
-    const orderUnsub = onSnapshot(ordersQuery, (snapshot) => {
-      const fetchedOrders = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Order[];
-      const earnings = fetchedOrders.reduce((sum, order) => sum + order.totalPrice, 0);
-      setTotalOrders(snapshot.size);
-      setTotalEarnings(earnings);
+    const userUnsub = firestore()
+      .collection('users')
+      .onSnapshot(snapshot => {
+        setTotalUsers(snapshot.size);
+        const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as User[];
+        const newMap = users.reduce((map, user) => {
+          if (user.id) map.set(user.id, user);
+          return map;
+        }, new Map<string, User>());
+        setUserMap(newMap);
+      });
 
-      const today = new Date().toDateString();
-      const deliveries = fetchedOrders.filter((order) => order.deliveryDate.toDate().toDateString() === today);
-      const newOrders = fetchedOrders.filter((order) => order.orderedAt.toDate().toDateString() === today);
-      setTodaysDeliveries(deliveries);
-      setTodaysOrders(newOrders);
-      setLoading(false);
-    });
+    const orderUnsub = firestore()
+      .collection('orders')
+      .orderBy('orderedAt', 'desc')
+      .onSnapshot(snapshot => {
+        const fetchedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+        const earnings = fetchedOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+        setTotalOrders(snapshot.size);
+        setTotalEarnings(earnings);
 
-    return () => { productUnsub(); userUnsub(); orderUnsub(); };
+        const todayStr = new Date().toDateString();
+
+        const deliveries = fetchedOrders.filter(order => order.deliveryDate.toDate().toDateString() === todayStr);
+        const newOrders = fetchedOrders.filter(order => order.orderedAt.toDate().toDateString() === todayStr);
+
+        setTodaysDeliveries(deliveries);
+        setTodaysOrders(newOrders);
+
+        setLoading(false);
+      });
+
+    return () => {
+      productUnsub();
+      userUnsub();
+      orderUnsub();
+    };
   }, []);
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+      </View>
+    );
   }
 
   return (

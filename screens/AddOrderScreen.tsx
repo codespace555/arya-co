@@ -13,7 +13,7 @@ import {
   Pressable,
   ActivityIndicator,
 } from "react-native";
-import { collection, addDoc, Timestamp, getDocs } from "firebase/firestore";
+import { collection, addDoc, Timestamp, getDocs } from "@react-native-firebase/firestore";
 import { db } from "../services/firebase";
 import { useNavigation } from "@react-navigation/native";
 import { Picker } from "@react-native-picker/picker";

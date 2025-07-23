@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ActivityIndicator, ScrollView, TouchableOpacity, StatusBar } from "react-native";
-import { doc, getDoc, collection, query, where, getCountFromServer } from "firebase/firestore";
-import { db, auth } from "../services/firebase";
+import { doc, getDoc, collection, query, where, getCountFromServer } from "@react-native-firebase/firestore";
+import { db, authInstance as auth } from "../services/firebase";
 import { useNavigation } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Feather"; // Using Feather icons
 
 interface UserProfile {
-  name: string;
-  phone: string;
+  name?: string;
+  phone?: string;
 }
 
 // Define the background color as a constant
@@ -16,7 +16,7 @@ const PRIMARY_TEXT_COLOR = "#E6EDF3";
 const SECONDARY_TEXT_COLOR = "#8B949E";
 const ACCENT_COLOR = "#238636"; // A nice green accent for the dark theme
 
-export default function UserProfileScreen() {
+export default function ProfileScreen() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [orderCount, setOrderCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,11 +34,11 @@ export default function UserProfileScreen() {
       try {
         // Fetch user data from Firestore
         const userDoc = await getDoc(doc(db, "users", userId));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
+        if (userDoc.exists) {
+          const userData = userDoc.data() as UserProfile;
           setUser({
-            name: userData.name || "No Name",
-            phone: userData.phone || auth.currentUser?.email || "phone",
+            name: userData.name ?? "No Name",
+            phone: userData.phone ?? auth.currentUser?.email ?? "phone",
           });
         } else {
           // Fallback to auth data if no Firestore document

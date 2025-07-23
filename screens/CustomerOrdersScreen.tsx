@@ -12,8 +12,8 @@ import {
   Platform,
   UIManager,
 } from "react-native";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
-import { db, auth } from "../services/firebase";
+import firestore from "@react-native-firebase/firestore";
+import { db, authInstance as auth } from "../services/firebase";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { format } from "date-fns";
@@ -39,8 +39,8 @@ interface Order {
   status: 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled';
 }
 
-// --- STYLISH & OVERFLOW-PROOF ORDER CARD ---
-const OrderCard = ({ order, index }: { order: Order; index: number; }) => {
+// --- ORDER CARD COMPONENT ---
+const OrderCard = ({ order, index }: { order: Order; index: number }) => {
   const getStatusStyle = () => {
     switch (order.status) {
       case 'Delivered': return { icon: 'checkmark-circle', color: '#10b981', label: 'Delivered' };
@@ -54,10 +54,9 @@ const OrderCard = ({ order, index }: { order: Order; index: number; }) => {
   return (
     <Animated.View style={styles.card} entering={FadeInUp.delay(index * 100).duration(500)}>
       <View style={styles.cardHeader}>
-        {/* This View prevents the text from overflowing by taking available space */}
         <View style={styles.productInfoContainer}>
-            <Text style={styles.productName}>{order.productName}</Text>
-            <Text style={styles.orderId}>ID: {order.id}</Text>
+          <Text style={styles.productName}>{order.productName}</Text>
+          <Text style={styles.orderId}>ID: {order.id}</Text>
         </View>
         <Text style={styles.price}>₹{order.totalPrice.toLocaleString('en-IN')}</Text>
       </View>
@@ -83,10 +82,10 @@ const OrderCard = ({ order, index }: { order: Order; index: number; }) => {
   );
 };
 
-// --- MAIN SCREEN COMPONENT ---
+// --- MAIN SCREEN ---
 export default function CustomerOrdersScreen() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
-  const [userName, setUserName] = useState<string>("Customer");
+  const [userName, setUserName] = useState("Customer");
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isDropdownOpen, setDropdownOpen] = useState(false);
@@ -96,31 +95,36 @@ export default function CustomerOrdersScreen() {
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
-        if (!userId) { setLoading(false); return; }
+        if (!userId) return setLoading(false);
         setLoading(true);
         try {
-          const userDocRef = doc(db, "users", userId);
-          const userDoc = await getDoc(userDocRef);
-          setUserName(userDoc.exists() ? userDoc.data().name : (auth.currentUser?.displayName || "Customer"));
+          // Get user name
+          const userDoc = await db.collection("users").doc(userId).get();
+          setUserName(userDoc.exists ? userDoc.data()?.name : auth.currentUser?.displayName || "Customer");
 
-          const q = query(collection(db, "orders"), where("userId", "==", userId));
-          const snap = await getDocs(q);
-          const fetchedOrders: Order[] = snap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as any))
-            .map(data => ({
-              ...data,
+          // Fetch orders
+          const snap = await db.collection("orders").where("userId", "==", userId).get();
+          const fetchedOrders: Order[] = snap.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              productName: data.productName,
+              quantity: data.quantity,
+              unit: data.unit,
+              price: data.price,
+              totalPrice: data.totalPrice,
               deliveryDate: data.deliveryDate?.toDate?.() || new Date(),
               orderedAt: data.orderedAt?.toDate?.() || new Date(),
               status: data.status || 'Pending',
-            }))
-            .sort((a, b) => b.orderedAt.getTime() - a.orderedAt.getTime());
+            };
+          }).sort((a, b) => b.orderedAt.getTime() - a.orderedAt.getTime());
 
           setAllOrders(fetchedOrders);
           if (fetchedOrders.length > 0) {
             setSelectedDate(format(fetchedOrders[0].orderedAt, "MMMM dd, yyyy"));
           }
         } catch (err) {
-          console.error("Failed to fetch data:", err);
+          console.error("Error fetching orders:", err);
         } finally {
           setLoading(false);
         }
@@ -132,16 +136,13 @@ export default function CustomerOrdersScreen() {
   const { dateOptions, ordersForSelectedDate } = useMemo(() => {
     const groups: { [key: string]: Order[] } = {};
     allOrders.forEach(order => {
-        const dateKey = format(order.orderedAt, "MMMM dd, yyyy");
-        if (!groups[dateKey]) {
-            groups[dateKey] = [];
-        }
-        groups[dateKey].push(order);
+      const key = format(order.orderedAt, "MMMM dd, yyyy");
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(order);
     });
-
-    const uniqueDateKeys = Object.keys(groups);
+    const uniqueDates = Object.keys(groups);
     const orders = selectedDate ? groups[selectedDate] || [] : [];
-    return { dateOptions: uniqueDateKeys, ordersForSelectedDate: orders };
+    return { dateOptions: uniqueDates, ordersForSelectedDate: orders };
   }, [allOrders, selectedDate]);
 
   const toggleDropdown = () => {
@@ -155,26 +156,41 @@ export default function CustomerOrdersScreen() {
   };
 
   const downloadInvoicesForSelectedDate = async () => {
-    if (!ordersForSelectedDate || ordersForSelectedDate.length === 0) {
-      Alert.alert("No Orders", "There are no orders for the selected date to download.");
+    if (!ordersForSelectedDate.length) {
+      Alert.alert("No Orders", "There are no orders for this date.");
       return;
     }
     try {
       const htmlItems = ordersForSelectedDate.map(order => `
         <div class="invoice-item">
-            <h3>${order.productName}</h3>
-            <p><strong>Order ID:</strong> ${order.id}</p>
-            <p><strong>Status:</strong> ${order.status}</p>
-            <p><strong>Quantity:</strong> ${order.quantity} ${order.unit}</p>
-            <p><strong>Total:</strong> ₹${order.totalPrice.toLocaleString('en-IN')}</p>
-        </div>`).join('');
+          <h3>${order.productName}</h3>
+          <p><strong>Order ID:</strong> ${order.id}</p>
+          <p><strong>Status:</strong> ${order.status}</p>
+          <p><strong>Quantity:</strong> ${order.quantity} ${order.unit}</p>
+          <p><strong>Total:</strong> ₹${order.totalPrice.toLocaleString('en-IN')}</p>
+        </div>
+      `).join('');
 
-      const html = `<!DOCTYPE html><html><head><style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;background-color:#0d1117;padding:20px;}.container{max-width:800px;margin:auto;background-color:#161b22;border:1px solid #30363d;border-radius:12px;padding:30px;}.header{text-align:center;padding-bottom:20px;border-bottom:1px solid #30363d;}.header h1{color:#58a6ff;margin:0;}.header h2{color:#c9d1d9;margin:5px 0 0;}.invoice-item{background-color:#0d1117;padding:15px;border-radius:8px;margin-top:20px;border:1px solid #30363d;}.invoice-item h3{color:#58a6ff;margin:0 0 10px;}.invoice-item p{margin:4px 0;color:#c9d1d9;}.footer{text-align:center;margin-top:30px;font-size:14px;color:#8b949e;}</style></head><body><div class="container"><div class="header"><h1>Invoices</h1><h2>For ${selectedDate}</h2></div>${htmlItems}<div class="footer">Thank you, ${userName}!</div></div></body></html>`;
-      
+      const html = `<!DOCTYPE html><html><head><style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1117; color: #fff; padding: 20px; }
+        .container { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 30px; max-width: 800px; margin: auto; }
+        .header, .footer { text-align: center; margin-bottom: 20px; }
+        .header h1 { color: #58a6ff; }
+        .invoice-item { margin-top: 20px; padding: 15px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; }
+        h3 { margin: 0 0 10px; color: #58a6ff; }
+        p { margin: 4px 0; color: #c9d1d9; }
+      </style></head><body>
+        <div class="container">
+          <div class="header"><h1>Invoices</h1><h2>${selectedDate}</h2></div>
+          ${htmlItems}
+          <div class="footer">Thank you, ${userName}!</div>
+        </div>
+      </body></html>`;
+
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri, { dialogTitle: `Invoices for ${selectedDate}` });
     } catch (error) {
-      Alert.alert("Error", "Could not generate the PDF.");
+      Alert.alert("Error", "Failed to generate invoice PDF.");
     }
   };
 
@@ -201,21 +217,21 @@ export default function CustomerOrdersScreen() {
             {isDropdownOpen && (
               <Animated.View style={styles.dropdownList} entering={FadeInUp}>
                 <FlatList
-                    data={dateOptions}
-                    keyExtractor={(item) => item}
-                    renderItem={({item}) => (
-                        <TouchableOpacity onPress={() => handleSelectDate(item)} style={styles.dropdownItem}>
-                            <Text style={[styles.dropdownItemText, selectedDate === item && styles.dropdownItemSelectedText]}>{item}</Text>
-                            {selectedDate === item && <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />}
-                        </TouchableOpacity>
-                    )}
+                  data={dateOptions}
+                  keyExtractor={item => item}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity onPress={() => handleSelectDate(item)} style={styles.dropdownItem}>
+                      <Text style={[styles.dropdownItemText, selectedDate === item && styles.dropdownItemSelectedText]}>{item}</Text>
+                      {selectedDate === item && <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />}
+                    </TouchableOpacity>
+                  )}
                 />
               </Animated.View>
             )}
           </View>
           <FlatList
             data={ordersForSelectedDate}
-            keyExtractor={(item) => item.id}
+            keyExtractor={item => item.id}
             contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 20 }}
             renderItem={({ item, index }) => <OrderCard order={item} index={index} />}
           />
@@ -230,6 +246,7 @@ export default function CustomerOrdersScreen() {
     </SafeAreaView>
   );
 }
+
 
 // --- STYLESHEET ---
 const styles = StyleSheet.create({

@@ -11,7 +11,9 @@
       "tsconfigPaths": true
     },
     "plugins": [
-      
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/firestore"
     ],
     "orientation": "portrait",
     "icon": "./assets/aryaco.png",
@@ -25,13 +27,17 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aray",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/aryaco.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.aray",
+      "googleServicesFile": "./google-services.json"
     }
   }
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View, TextInput, StyleSheet, Alert, Animated } from 'react-native';
-import { collection, doc, getDocs, orderBy, query, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, orderBy, query, updateDoc } from '@react-native-firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';

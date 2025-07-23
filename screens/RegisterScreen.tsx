@@ -12,9 +12,9 @@ import {
   StatusBar,
   ScrollView,
 } from 'react-native';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from '@react-native-firebase/firestore';
 // IMPORTANT: Ensure your firebase config file is correct and at this path.
-import { auth, db } from '../services/firebase';
+import { authInstance as auth, db } from '../services/firebase';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // IMPORTANT: Ensure your navigation types are correctly defined here.
 import { RootStackParamList } from '../types/navigation';

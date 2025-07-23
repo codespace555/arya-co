@@ -4,18 +4,15 @@ module.exports = function (api) {
   return {
     presets: [
       "babel-preset-expo", 
-      "nativewind/babel"
     ],
     plugins: [
-       
+      "nativewind/babel",
       [
         "module-resolver",
         {
           root: ["./"],
           alias: {
             "@": "./",
-            // Note: This alias for tailwind.config is often not needed with modern tooling
-            "tailwind.config": "./tailwind.config.js"
           }
         }
       ],

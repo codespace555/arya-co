@@ -12,7 +12,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import { collection, addDoc, Timestamp, setDoc, doc } from "firebase/firestore";
+import { collection, addDoc, Timestamp, setDoc, doc } from "@react-native-firebase/firestore";
 import { db } from "../services/firebase";
 import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
 import { DashboardStackParamList } from "../types/navigation";

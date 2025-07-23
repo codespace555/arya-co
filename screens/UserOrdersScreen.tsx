@@ -17,7 +17,7 @@ import {
   updateDoc,
   doc,
   getDoc,
-} from "firebase/firestore";
+} from "@react-native-firebase/firestore";
 import { db } from "../services/firebase";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { DashboardStackParamList } from "../types/navigation";
@@ -105,7 +105,7 @@ export default function UserOrdersScreen() {
       try {
         const userDocRef = doc(db, "users", userId);
         const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
+        if (userDoc.exists) {
           setUser({ id: userDoc.id, ...userDoc.data() } as User);
         }
       } catch (error) {
